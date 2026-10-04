@@ -1,0 +1,25 @@
+# ElixirSSI node configuration (FAT boot partition: /boot/ssi.conf).
+# Every node in a cluster gets the same file — flash one image to all CM5s.
+
+# Nodes with the same cluster name and secret form one system. Generate a
+# secret with:  head -c 24 /dev/urandom | base64
+cluster = lab
+secret = CHANGE-ME
+
+# Per-interface network policy: dhcp, linklocal, static:IP/PREFIX[@GATEWAY],
+# or off — tried in order. The default suits a switch with or without DHCP.
+net.eth0 = dhcp,linklocal
+
+# Unicast seed peers for networks that block multicast discovery.
+#peers = 192.168.1.20,192.168.1.21
+
+# Copies of every file block kept in the cluster.
+replicas = 2
+
+# Draw the cluster desktop on a RemoteOS-SDL service on your workstation:
+#   remoteos-sdl --listen-tcp 0.0.0.0:17010
+#desktop = 192.168.1.10:17010
+#desktop.size = 1600x1000
+
+# SSH: keys from /boot/authorized_keys; a password is optional.
+#ssh.password = choose-one

@@ -1,0 +1,179 @@
+raspi5b: Put RP1 on PCIe2 and add the raspi-cm5 machine
+
+RP1 (hw/misc/rp1.c) is created on PCIe2 at 0002:01:00.0, taking -nic
+and the third serial port; its MAC is the one the firmware reports. The
+raspi-cm5 machine is a Compute Module 5 on its IO board: board type 0x18,
+its model name, and eMMC on SDIO1 in place of the SD card slot. RP1
+blocks that are not modelled join the device tree's unmodelled list.
+diff --git a/overlay/hw/arm/raspi5b.c b/overlay/hw/arm/raspi5b.c
+index 8659e91..9cce8fd 100644
+--- a/overlay/hw/arm/raspi5b.c
++++ b/overlay/hw/arm/raspi5b.c
+@@ -36,6 +36,9 @@
+ #include "hw/core/registerfields.h"
+ #include "hw/display/i2c-ddc.h"
+ #include "hw/misc/led.h"
++#include "hw/misc/rp1.h"
++#include "hw/pci/pci.h"
++#include "hw/pci/pci_bridge.h"
+ #include "hw/sd/sd.h"
+ #include "migration/vmstate.h"
+ #include "standard-headers/linux/input.h"
+@@ -44,12 +47,21 @@
+ #include "system/device_tree.h"
+ #include "system/reset.h"
+ #include "system/runstate.h"
++#include "system/system.h"
++#include "net/net.h"
+ #include "elf.h"
+ #include <libfdt.h>
+ 
+ #define TYPE_RASPI5B_MACHINE MACHINE_TYPE_NAME("raspi5b")
+ OBJECT_DECLARE_SIMPLE_TYPE(Raspi5bMachineState, RASPI5B_MACHINE)
+ 
++/*
++ * The Compute Module 5 on its IO board: the same BCM2712 and RP1 as a
++ * Raspberry Pi 5, with eMMC in place of the SD card slot on SDIO1
++ * (CM5 datasheet, section 2) and its own board type in the revision code
++ */
++#define TYPE_RASPI_CM5_MACHINE MACHINE_TYPE_NAME("raspi-cm5")
++
+ struct Raspi5bMachineState {
+     /*< private >*/
+     MachineState parent_obj;
+@@ -214,15 +226,21 @@ FIELD(REV_CODE, MEMORY_SIZE,   20, 3)
+ FIELD(REV_CODE, STYLE,         23, 1)
+ 
+ #define REV_TYPE_5B             0x17
++#define REV_TYPE_CM5            0x18
+ #define REV_PROCESSOR_BCM2712   4
+ #define REV_MANUFACTURER_SONY   0
+ 
+-static uint32_t raspi5b_board_rev(uint64_t ram_size)
++static bool raspi5b_is_cm5(const Raspi5bMachineState *s)
++{
++    return object_dynamic_cast(OBJECT(s), TYPE_RASPI_CM5_MACHINE);
++}
++
++static uint32_t raspi5b_board_rev(uint64_t ram_size, bool cm5)
+ {
+     uint32_t rev = 0;
+ 
+     rev = FIELD_DP32(rev, REV_CODE, REVISION, 0);        /* 1.0 */
+-    rev = FIELD_DP32(rev, REV_CODE, TYPE, REV_TYPE_5B);
++    rev = FIELD_DP32(rev, REV_CODE, TYPE, cm5 ? REV_TYPE_CM5 : REV_TYPE_5B);
+     rev = FIELD_DP32(rev, REV_CODE, PROCESSOR, REV_PROCESSOR_BCM2712);
+     rev = FIELD_DP32(rev, REV_CODE, MANUFACTURER, REV_MANUFACTURER_SONY);
+     /* Encoded as log2(size / 256 MiB) */
+@@ -272,6 +290,14 @@ static const char *const raspi5b_unmodelled_compatibles[] = {
+      */
+     "brcm,bcm43438-bt",
+     "brcm,bcm4329-fmac",
++    /*
++     * RP1's blocks that are not modelled yet: its mailbox to the M3
++     * cores, ADC, PIO and DMA controller
++     */
++    "raspberrypi,rp1-mbox",
++    "raspberrypi,rp1-adc",
++    "raspberrypi,rp1-pio",
++    "snps,axi-dma-1.01a",
+ };
+ 
+ /*
+@@ -606,7 +632,9 @@ static void raspi5b_boot_values(const Raspi5bMachineState *s,
+  */
+ static void raspi5b_fdt_identity(const Raspi5bMachineState *s, void *fdt)
+ {
+-    g_autofree char *model = g_strdup_printf("Raspberry Pi 5 Model B Rev 1.%u",
++    g_autofree char *model = g_strdup_printf("%s Rev 1.%u",
++        raspi5b_is_cm5(s) ? "Raspberry Pi Compute Module 5"
++                          : "Raspberry Pi 5 Model B",
+         FIELD_EX32(s->board_rev, REV_CODE, REVISION));
+     g_autofree char *serial = g_strdup_printf("%016" PRIx64, s->serial);
+ 
+@@ -1199,7 +1227,12 @@ static void raspi5b_sd_card(Raspi5bMachineState *s)
+     if (!di) {
+         return;
+     }
+-    card = qdev_new(TYPE_SD_CARD);
++    /*
++     * A CM5's eMMC sits where a Pi 5 has its slot; the drive holds the
++     * user area (the boot partitions are left out, as Raspberry Pi
++     * images do not use them)
++     */
++    card = qdev_new(raspi5b_is_cm5(s) ? TYPE_EMMC : TYPE_SD_CARD);
+     /* For the monitor: the card is /machine/sd-card */
+     object_property_add_child(OBJECT(s), "sd-card", OBJECT(card));
+     qdev_prop_set_drive_err(card, "drive", blk_by_legacy_dinfo(di),
+@@ -1207,6 +1240,26 @@ static void raspi5b_sd_card(Raspi5bMachineState *s)
+     qdev_realize_and_unref(card, bus, &error_fatal);
+ }
+ 
++/*
++ * RP1, the south bridge, on PCIe2's link (PCI 0002:01:00.0): its Ethernet
++ * MAC takes -nic, its UART0 (GPIO 14/15) the third serial port. The MAC
++ * address it uses is the one the firmware reports and writes into the
++ * device tree, as the board's OTP holds a single address for both.
++ */
++static void raspi5b_rp1(Raspi5bMachineState *s)
++{
++    PCIBus *bus = pci_bridge_get_sec_bus(PCI_BRIDGE(&s->soc.pcie[2].root));
++    PCIDevice *rp1 = pci_new(PCI_DEVFN(0, 0), TYPE_RP1);
++
++    object_property_add_child(OBJECT(s), "rp1", OBJECT(rp1));
++    qemu_configure_nic_device(DEVICE(rp1), true, NULL);
++    if (serial_hd(2)) {
++        qdev_prop_set_chr(DEVICE(rp1), "uart0-chardev", serial_hd(2));
++    }
++    pci_realize_and_unref(rp1, bus, &error_fatal);
++    s->soc.property.parent_obj.macaddr = RP1(rp1)->eth.conf.macaddr;
++}
++
+ /*
+  * What a reset leaves for the boot it starts (the reset status, the
+  * firmware's reboot flags and the boot count) may be given for the first
+@@ -1249,7 +1302,7 @@ static void raspi5b_machine_init(MachineState *machine)
+                      BCM2712_VC_RAM_BASE);
+         exit(EXIT_FAILURE);
+     }
+-    s->board_rev = raspi5b_board_rev(machine->ram_size);
++    s->board_rev = raspi5b_board_rev(machine->ram_size, raspi5b_is_cm5(s));
+ 
+     memory_region_add_subregion(get_system_memory(), BCM2712_RAM_BASE,
+                                 machine->ram);
+@@ -1269,6 +1322,7 @@ static void raspi5b_machine_init(MachineState *machine)
+     raspi5b_carry_reset(s);
+     raspi5b_wire_gpio(s);
+     raspi5b_sd_card(s);
++    raspi5b_rp1(s);
+     /* A monitor on HDMI0 */
+     i2c_slave_create_simple(s->soc.ddc[0].bus, TYPE_I2CDDC,
+                             RASPI5B_DDC_EDID_ADDR);
+@@ -1548,6 +1602,15 @@ static void raspi5b_machine_class_init(ObjectClass *oc, const void *data)
+         "bits; a running machine reads its boots so far");
+ }
+ 
++static void raspi_cm5_machine_class_init(ObjectClass *oc, const void *data)
++{
++    MachineClass *mc = MACHINE_CLASS(oc);
++
++    mc->desc = "Raspberry Pi Compute Module 5 (BCM2712) on its IO board";
++    /* -drive goes in the eMMC */
++    mc->auto_create_sdcard = false;
++}
++
+ static const TypeInfo raspi5b_machine_types[] = {
+     {
+         .name           = TYPE_RASPI5B_MACHINE,
+@@ -1556,6 +1619,11 @@ static const TypeInfo raspi5b_machine_types[] = {
+         .class_init     = raspi5b_machine_class_init,
+         .instance_init  = raspi5b_machine_instance_init,
+         .interfaces     = aarch64_machine_interfaces,
++    }, {
++        .name           = TYPE_RASPI_CM5_MACHINE,
++        .parent         = TYPE_RASPI5B_MACHINE,
++        .class_init     = raspi_cm5_machine_class_init,
++        .interfaces     = aarch64_machine_interfaces,
+     },
+ };
+ 

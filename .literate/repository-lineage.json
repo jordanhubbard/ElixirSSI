@@ -1,0 +1,41 @@
+{
+  "schema": "urn:literate-ai:schema:v1:repository-lineage",
+  "selection": {
+    "schema": "urn:literate-ai:schema:v1:repository-parent-selection",
+    "mode": "inherit",
+    "parents": [
+      {
+        "schema": "urn:literate-ai:schema:v1:repository-parent-reference",
+        "repository_url": "https://github.com/NVIDIA-dev/literate-ai",
+        "requested_revision": "v1.0.1"
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "schema": "urn:literate-ai:schema:v1:repository-lineage-node",
+      "project_id": "literate-ai",
+      "project_identity": {
+        "schema": "urn:literate-ai:schema:v1:content-identity",
+        "algorithm": "sha256",
+        "digest": "4ef69887e1c35d722ac62d3348627901e1ef78d0b7faa80984f1633443d85087"
+      },
+      "repository_url": "https://github.com/NVIDIA-dev/literate-ai",
+      "requested_revision": "v1.0.1",
+      "resolved_revision": "b9d906d35a983236a1ea8bb8c26b486a05c44019",
+      "parent_selection": {
+        "schema": "urn:literate-ai:schema:v1:repository-parent-selection",
+        "mode": "root",
+        "parents": []
+      },
+      "parents": []
+    }
+  ],
+  "selected_parents": [
+    {
+      "schema": "urn:literate-ai:schema:v1:content-identity",
+      "algorithm": "sha256",
+      "digest": "cb7adf4edcaf1c04f7df82dbbad3f574565133b0f4de0c8f1859d809f44e66f9"
+    }
+  ]
+}

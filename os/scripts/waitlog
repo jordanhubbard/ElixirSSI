@@ -1,0 +1,21 @@
+#!/bin/sh
+# waitlog FILE PATTERN [TIMEOUT_MS] — return 0 as soon as FILE contains PATTERN.
+# A literal PATTERN uses toolscheme's event wait; an "a|b" alternation (ERE)
+# is polled in short increments. Exit 1 on timeout.
+file=$1; re=$2; ms=${3:-60000}
+case "$re" in
+  *'|'*|*'['*|*'*'*) ;;
+  *)
+    if command -v toolscheme >/dev/null 2>&1; then
+      dir=$(cd "$(dirname "$file")" && pwd)
+      toolscheme --root "$dir" -e "(wait-for (quote (matches \"$(basename "$file")\" \"$re\")) (quote (timeout-ms $ms)))" 2>/dev/null \
+        | grep -q 'satisfied #t'
+      exit $?
+    fi ;;
+esac
+tries=$(( ms / 200 ))
+while [ "$tries" -gt 0 ]; do
+  grep -Eaq "$re" "$file" 2>/dev/null && exit 0
+  tries=$(( tries - 1 )); sleep 0.2
+done
+exit 1

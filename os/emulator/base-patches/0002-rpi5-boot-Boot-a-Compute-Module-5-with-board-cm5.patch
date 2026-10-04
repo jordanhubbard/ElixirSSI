@@ -1,0 +1,55 @@
+rpi5-boot: Boot a Compute Module 5 with --board cm5
+
+The CM5 firmware matches [cm5] and board-type=0x18, and picks the CM5 IO
+board device tree; the image goes in the eMMC of the raspi-cm5 machine.
+
+diff --git a/scripts/rpi5-boot b/scripts/rpi5-boot
+index 8e78277..8ef6ff8 100755
+--- a/scripts/rpi5-boot
++++ b/scripts/rpi5-boot
+@@ -56,6 +56,15 @@ DEFAULT_DTB = "bcm2712-rpi-5-b.dtb"
+ DEFAULT_KERNELS = ("kernel_2712.img", "kernel8.img")
+ PLATFORM = "bcm2712"
+ BOARD_TYPE = 0x17
++# What --board changes: the machine, the board type and model filter
++# config.txt matches, and the device tree the firmware picks. A Compute
++# Module 5's firmware picks the CM5 IO board's tree unless config.txt's
++# device_tree names another (bcm2712-rpi-cm5-cm4io.dtb on a CM4 IO board).
++BOARDS = {
++    "pi5": ("raspi5b", 0x17, "pi5", "bcm2712-rpi-5-b.dtb"),
++    "cm5": ("raspi-cm5", 0x18, "cm5", "bcm2712-rpi-cm5-cm5io.dtb"),
++}
++MACHINE = "raspi5b"
+ # The raspi5b machine's serial number unless "serial=" sets another
+ MACHINE_SERIAL = 0x0123456789abcdef
+ # The firmware's reboot flag that makes the next boot a tryboot
+@@ -1946,7 +1955,7 @@ def qemu_command(args, image, boot, files, reset):
+     """QEMU's command line for @boot, the one @reset starts, from @files:
+     the machine reports the partition the files come from, and starts
+     with what the reset left"""
+-    machine = ["raspi5b"]
++    machine = [MACHINE]
+     if boot.armstub:
+         machine.append("secure=on")
+         address = boot.config.get("device_tree_address")
+@@ -2098,6 +2107,10 @@ def parse_args(argv):
+                         help="QEMU to run (default: $QEMU, else this "
+                         "checkout's build/qemu-system-aarch64, else "
+                         "qemu-system-aarch64)")
++    parser.add_argument("--board", choices=sorted(BOARDS), default="pi5",
++                        help="the board whose firmware boots the card: a "
++                        "Raspberry Pi 5 Model B (the default) or a Compute "
++                        "Module 5 on its IO board, whose eMMC takes the image")
+     parser.add_argument("--partition", metavar="N", type=int,
+                         help="boot partition number, unless the guest asks "
+                         "for another when it reboots (default: as the "
+@@ -2125,6 +2138,9 @@ def parse_args(argv):
+                         "does with uart_2ndstage=1")
+     args = parser.parse_args(argv)
+     args.qemu_args = qemu_args
++    global MACHINE, BOARD_TYPE, OUR_MODELS, DEFAULT_DTB
++    MACHINE, BOARD_TYPE, model, DEFAULT_DTB = BOARDS[args.board]
++    OUR_MODELS = {model}
+     return args
+ 
+ 

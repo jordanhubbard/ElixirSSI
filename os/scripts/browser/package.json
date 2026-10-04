@@ -1,0 +1,8 @@
+{
+  "name": "elixirssi-browser-tests",
+  "private": true,
+  "description": "Browser automation for make test-monitor (scripts/test_monitor.py drives drive.mjs)",
+  "dependencies": {
+    "playwright-core": "1.62.1"
+  }
+}

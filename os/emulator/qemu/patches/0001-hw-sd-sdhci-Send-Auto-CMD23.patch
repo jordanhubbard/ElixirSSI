@@ -1,0 +1,43 @@
+hw/sd/sdhci: Send Auto CMD23
+
+SD Host Controller 3.00 (section 2.2.19) lets software ask the host to
+send SET_BLOCK_COUNT (CMD23) before a multiple-block command, with the
+argument it leaves in Argument 2 (the SDMA address register). Linux does
+so for eMMC whenever the host is version 3.00 or later; without it, a
+card sees an open-ended write and waits for data the host has finished
+sending, and every write times out ("Card stuck being busy"). Keep the
+mode's bit in the transfer mode register and send the command.
+
+--- a/hw/sd/sdhci-internal.h
++++ b/hw/sd/sdhci-internal.h
+@@ -46,7 +46,7 @@
+ #define SDHC_TRNS_ACMD23               0x0008 /* since v3 */
+ #define SDHC_TRNS_READ                 0x0010
+ #define SDHC_TRNS_MULTI                0x0020
+-#define SDHC_TRNMOD_MASK               0x0037
++#define SDHC_TRNMOD_MASK               0x003f
+ 
+ /* R/W Command Register 0x0 */
+ #define SDHC_CMDREG                    0x0E
+--- a/hw/sd/sdhci.c
++++ b/hw/sd/sdhci.c
+@@ -348,6 +348,19 @@
+     request.cmd = s->cmdreg >> 8;
+     request.arg = s->argument;
+ 
++    /*
++     * Auto CMD23 (SD Host Controller 3.00, 2.2.19): before a multiple
++     * block command, the host sends SET_BLOCK_COUNT itself, with the
++     * argument software left in Argument 2, the SDMA address register
++     */
++    if ((s->trnmod & SDHC_TRNS_ACMD23) && (s->trnmod & SDHC_TRNS_MULTI) &&
++        (s->cmdreg & SDHC_CMD_DATA_PRESENT)) {
++        SDRequest sbc = { .cmd = 23, .arg = s->sdmasysad };
++
++        trace_sdhci_end_transfer(sbc.cmd, sbc.arg);
++        sdbus_do_command(&s->sdbus, &sbc, response, sizeof(response));
++    }
++
+     trace_sdhci_send_command(request.cmd, request.arg);
+     rlen = sdbus_do_command(&s->sdbus, &request, response, sizeof(response));
+ 

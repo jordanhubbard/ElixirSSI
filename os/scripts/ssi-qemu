@@ -1,0 +1,98 @@
+#!/bin/sh
+# ssi-qemu — run ElixirSSI nodes under QEMU/KVM with the shipped CM5 kernel.
+#
+#   ssi-qemu run                    one node, serial console on this terminal
+#   ssi-qemu cluster N [ENDPOINT]   N nodes on a shared virtual switch; node 1's
+#                                   console on this terminal, the rest headless.
+#                                   ENDPOINT (host:port) enables the desktop.
+#   ssi-qemu start I [ENDPOINT]     start node I headless (console in build/cluster)
+#   ssi-qemu stop [I]               stop one or all background nodes
+#
+# Each node has two NICs: eth0 on a multicast "switch" shared by all nodes
+# (link-local addressing, cluster traffic), and eth1 on QEMU user networking
+# (DHCP, reaches the host as 10.0.2.2; SSH forwarded to localhost:2220+I,
+# the web endpoint to localhost:8080+I, its TLS port to localhost:8440+I).
+# eth0's cable runs through a hub
+# (hub 0, port "pa") to switch A (netdev "swa"); a test partitions the
+# cluster from the QEMU monitor by hot-adding switch B to some nodes
+# (netdev_add socket,id=swb,mcast=GROUP_B; netdev_add hubport,id=pb,hubid=0,
+# netdev=swb) and unplugging A there (set_link swa off). Switch B's group and
+# port are the ones after A's (a multicast socket hears every group on its port).
+# Each node gets a persistent ext4 data disk in build/cluster/nodeI.ext4, a
+# virtio keyboard (typing reaches the tty1 shell), and, when started in the
+# background, a QEMU monitor socket build/cluster/nodeI.mon.
+set -eu
+os=$(cd "$(dirname "$0")/.." && pwd)
+b=$os/build
+dir=$b/cluster
+mkdir -p "$dir"
+# KVM when the host is arm64 with /dev/kvm; otherwise emulate a Cortex-A76,
+# the CM5's core (correct but several times slower).
+if [ "$(uname -m)" = aarch64 ] && [ -w /dev/kvm ]; then
+  accel="-accel kvm -cpu host -M virt,gic-version=host"
+else
+  accel="-accel tcg,thread=multi -cpu cortex-a76 -M virt,gic-version=3"
+fi
+mem=${SSI_MEM:-2048}
+cpus=${SSI_CPUS:-4}
+group=${SSI_SWITCH:-230.83.83.1:18350}
+
+# Optional: pin every VM to a host CPU list (e.g. one core type on a
+# big.LITTLE host) with SSI_HOST_CPUS=5-9,15-19.
+pin=""
+[ -n "${SSI_HOST_CPUS:-}" ] && pin="taskset -c $SSI_HOST_CPUS"
+
+disk() {
+  img=$dir/node$1.ext4
+  if [ ! -f "$img" ]; then
+    truncate -s "${SSI_DISK:-1G}" "$img"
+    mkfs.ext4 -q -F -L ssi-data "$img"
+  fi
+  echo "$img"
+}
+
+args() {
+  i=$1; endpoint=${2:-}
+  hex=$(printf '%02x' "$i")
+  extra="${SSI_CMDLINE:-}"
+  [ -n "$endpoint" ] && extra="$extra ssi.desktop=$endpoint"
+  echo $accel -smp "$cpus" -m "$mem" -no-reboot \
+    -kernel "$b/kernel/arch/arm64/boot/Image" -initrd "$b/ssi-initramfs.cpio.gz" \
+    -drive "file=$(disk "$i"),format=raw,if=virtio" \
+    -netdev "dgram,id=swa,remote.type=inet,remote.host=${group%:*},remote.port=${group#*:}" \
+    -netdev hubport,id=pa,hubid=0,netdev=swa -netdev hubport,id=c,hubid=0 \
+    -device "virtio-net-pci,netdev=c,mac=52:54:00:55:00:$hex" \
+    -netdev "user,id=u,hostfwd=tcp:127.0.0.1:$((2220 + i))-:22,hostfwd=tcp:127.0.0.1:$((8080 + i))-:80,hostfwd=tcp:127.0.0.1:$((8440 + i))-:443" -device "virtio-net-pci,netdev=u,mac=52:54:00:66:00:$hex" \
+    -device virtio-keyboard-pci \
+    -append "\"console=ttyAMA0 panic=5 ssi.cluster_if=eth0 ssi.net.eth0=linklocal ssi.net.eth1=dhcp ssi.ssh.password=${SSI_PASSWORD:-elixir} $extra\""
+}
+
+start() {
+  i=$1
+  eval $pin qemu-system-aarch64 $(args "$i" "${2:-}") \
+    -display none -monitor "unix:$dir/node$i.mon,server=on,wait=off" -daemonize -pidfile "$dir/node$i.pid" \
+    -chardev "socket,id=s,path=$dir/node$i.sock,server=on,wait=off,logfile=$dir/node$i.log" -serial chardev:s
+  echo "node $i: console log $dir/node$i.log, ssh -p $((2220 + i)) root@localhost"
+}
+
+stop() {
+  for p in "$dir"/node${1:-*}.pid; do
+    [ -f "$p" ] && kill "$(cat "$p")" 2>/dev/null || true
+    rm -f "$p"
+  done
+}
+
+case "${1:-run}" in
+  run)
+    eval exec $pin qemu-system-aarch64 $(args 1 "${2:-}") -nographic ;;
+  cluster)
+    n=${2:-3}
+    stop
+    i=2; while [ "$i" -le "$n" ]; do start "$i" "${3:-}"; i=$((i + 1)); done
+    echo "node 1: this terminal (Ctrl-A X quits; 'ssi-qemu stop' stops the others)"
+    eval $pin qemu-system-aarch64 $(args 1 "${3:-}") -nographic
+    stop ;;
+  start) start "$2" "${3:-}" ;;
+  stop) stop "${2:-}" ;;
+  *) sed -n '2,23p' "$0"; exit 2 ;;
+esac

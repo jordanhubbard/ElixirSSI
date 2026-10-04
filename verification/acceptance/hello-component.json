@@ -1,0 +1,44 @@
+{
+  "schema": "literate-ai/component-acceptance-oracle@1",
+  "component": "hello-component",
+  "specification_set_identity": "sha256:1b8c7b9fa7c8039f069b3389dd2dac13eead7ed2ed7616d601e97bb1496d0ac0",
+  "cases": [
+    {
+      "case_id": "primary",
+      "arguments": [
+        {
+          "name": "Ada Lovelace",
+          "messages": [
+            "Build portable software",
+            "Ship with confidence"
+          ]
+        }
+      ],
+      "expected_result": {
+        "greeting": "Hello, Ada Lovelace!",
+        "recipient_id": "ada-lovelace",
+        "message_count": 2,
+        "word_count": 6
+      }
+    },
+    {
+      "case_id": "generalization",
+      "arguments": [
+        {
+          "name": "Grace Hopper",
+          "messages": [
+            "Debug boldly",
+            "Build once",
+            "Run everywhere safely"
+          ]
+        }
+      ],
+      "expected_result": {
+        "greeting": "Hello, Grace Hopper!",
+        "recipient_id": "grace-hopper",
+        "message_count": 3,
+        "word_count": 7
+      }
+    }
+  ]
+}

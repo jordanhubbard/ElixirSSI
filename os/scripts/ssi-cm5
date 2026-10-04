@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""ssi-cm5 — run ElixirSSI on emulated Raspberry Pi Compute Module 5 boards.
+
+  ssi-cm5 run                 one board, serial console on this terminal
+  ssi-cm5 start I             start board I in the background
+  ssi-cm5 stop [I]            pull the power on one or every board
+  ssi-cm5 cluster N           N boards on one switch; board 1 on this terminal
+
+Each board is QEMU's raspi-cm5 machine (BCM2712 + RP1, os/emulator) booting
+its own copy of the flashable image, build/cm5/elixirssi-cm5.img, from its
+eMMC, as a CM5's firmware does (rpi5-boot --board cm5 reads config.txt,
+cmdline.txt and the device tree from the image's boot partition, and boots
+the card again whenever the OS reboots). The image is not modified: the
+boards run the image's defaults (dhcp,linklocal on eth0, the cluster secret
+in its ssi.conf). The cluster port is RP1's Ethernet MAC on a multicast
+"switch" shared by every board; there is no DHCP server on it, so the
+cluster forms over link-local addresses, as on a bare switch.
+
+The cable runs through a hub (hub 0): port "pa" leads to switch A (netdev
+"swa"). A test partitions the cluster from the QEMU monitor, without the
+boards seeing a link change, by hot-adding switch B to some boards
+(netdev_add socket,id=swb,mcast=GROUP_B; netdev_add hubport,id=pb,hubid=0,
+netdev=swb) and unplugging A there (set_link swa off). Each board also has a
+USB Ethernet adapter as a management port on QEMU user networking: its web
+endpoint is forwarded to 127.0.0.1:8180+I, its TLS endpoint to
+127.0.0.1:8480+I and SSH to 127.0.0.1:2320+I. The
+command line pins the cluster to eth0 (ssi.cluster_if=eth0).
+
+Board I keeps its eMMC in build/cm5emu/nodeI.img (a sparse copy made on
+first start), its console log in nodeI.log, a console socket nodeI.sock and
+a QEMU monitor socket nodeI.mon (whose sendkey types on the board's USB
+keyboard). 'stop' kills the board's firmware process,
+and QEMU with it: a power pull, not a shutdown.
+
+Environment: SSI_CM5_SWITCH (switch A's group:port, default 230.83.83.5:18355;
+switch B is the next group and port: on Linux a multicast socket receives
+every group sent to its port, so the switches must not share one),
+SSI_CM5_MEM (MiB, default 4096), SSI_CM5_APPEND (extra kernel arguments),
+SSI_CM5_QEMU_ARGS (extra QEMU options, e.g. tracing), SSI_EMULATOR (the
+QEMU binary, default build/emulator/current/...).
+"""
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+OS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BUILD = os.path.join(OS, "build")
+DIR = os.path.join(BUILD, "cm5emu")
+IMAGE = os.path.join(BUILD, "cm5", "elixirssi-cm5.img")
+EMU = os.path.join(BUILD, "emulator", "current")
+QEMU = os.environ.get("SSI_EMULATOR", os.path.join(EMU, "build", "qemu-system-aarch64"))
+BOOT = os.path.join(EMU, "scripts", "rpi5-boot")
+SWITCH = os.environ.get("SSI_CM5_SWITCH", "230.83.83.5:18355")
+MEM = os.environ.get("SSI_CM5_MEM", "4096")
+APPEND = os.environ.get("SSI_CM5_APPEND", "ssi.ssh.password=elixir")
+
+
+def path(i, suffix):
+    return os.path.join(DIR, f"node{i}{suffix}")
+
+
+def card(i):
+    """Board i's eMMC: the flashable image, copied once (sparse)."""
+    img = path(i, ".img")
+    if not os.path.exists(img):
+        if not os.path.exists(IMAGE):
+            sys.exit(f"ssi-cm5: no {IMAGE}; run 'make image-cm5' first")
+        subprocess.run(["cp", "--sparse=always", IMAGE, img + ".partial"], check=True)
+        os.rename(img + ".partial", img)
+    return img
+
+
+def command(i, console):
+    host, port = SWITCH.rsplit(":", 1)
+    qemu = ["-smp", "4", "-m", MEM,
+            "-netdev", f"dgram,id=swa,remote.type=inet,remote.host={host},remote.port={port}",
+            "-netdev", "hubport,id=pa,hubid=0,netdev=swa",
+            "-netdev", "hubport,id=switch,hubid=0",
+            "-global", "rp1.netdev=switch", "-global", f"rp1.mac=52:54:00:c5:00:{i:02x}",
+            # The management port: a USB Ethernet adapter on user networking
+            "-netdev", f"user,id=mgmt,hostfwd=tcp:127.0.0.1:{8180 + i}-:80,hostfwd=tcp:127.0.0.1:{8480 + i}-:443,hostfwd=tcp:127.0.0.1:{2320 + i}-:22",
+            "-device", f"usb-net,netdev=mgmt,mac=52:54:00:c5:01:{i:02x}",
+            # A USB keyboard in one of the IO board's ports: typing reaches tty1
+            "-device", "usb-kbd"]
+    qemu += os.environ.get("SSI_CM5_QEMU_ARGS", "").split()
+    if console:
+        qemu += ["-display", "none", "-serial", "null", "-serial", "null", "-serial", "mon:stdio"]
+    else:
+        qemu += ["-display", "none", "-monitor", f"unix:{path(i, '.mon')},server=on,wait=off",
+                 "-chardev", f"socket,id=s,path={path(i, '.sock')},server=on,wait=off,logfile={path(i, '.log')}",
+                 # The console is RP1's UART0 (config.txt's uart0_console):
+                 # QEMU's third serial port, after UART10 and UARTA
+                 "-serial", "null", "-serial", "null", "-serial", "chardev:s"]
+    return [sys.executable, BOOT, "--board", "cm5", "--qemu", QEMU, "--graphics",
+            "--append", f"ssi.cluster_if=eth0 {APPEND}", card(i), "--", *qemu]
+
+
+def start(i):
+    os.makedirs(DIR, exist_ok=True)
+    stop(i)
+    with open(path(i, ".boot.log"), "a") as out:
+        proc = subprocess.Popen(command(i, False), stdin=subprocess.DEVNULL, stdout=out, stderr=out,
+                                start_new_session=True)
+    with open(path(i, ".pid"), "w") as f:
+        f.write(str(proc.pid))
+    # The console socket exists once QEMU is up
+    deadline = time.time() + 30
+    while not os.path.exists(path(i, ".sock")) and time.time() < deadline:
+        if proc.poll() is not None:
+            sys.exit(f"ssi-cm5: board {i} did not start; see {path(i, '.boot.log')}")
+        time.sleep(0.1)
+    print(f"board {i}: console log {path(i, '.log')}")
+
+
+def stop(i=None):
+    if not os.path.isdir(DIR):
+        return
+    for name in os.listdir(DIR):
+        if not (name.startswith("node") and name.endswith(".pid")):
+            continue
+        if i is not None and name != f"node{i}.pid":
+            continue
+        pidfile = os.path.join(DIR, name)
+        try:
+            pid = int(open(pidfile).read())
+            os.killpg(pid, signal.SIGKILL)
+        except (ValueError, ProcessLookupError, PermissionError):
+            pass
+        os.remove(pidfile)
+        for suffix in (".sock", ".mon"):
+            p = os.path.join(DIR, name[:-4] + suffix)
+            if os.path.exists(p):
+                os.remove(p)
+
+
+def main(argv):
+    for tool in (QEMU, BOOT):
+        if not os.path.exists(tool):
+            sys.exit(f"ssi-cm5: no {tool}; run 'make emulator' first")
+    if not shutil.which("mdir"):
+        sys.exit("ssi-cm5: mtools is required (it reads the image's boot partition)")
+    cmd = argv[1] if len(argv) > 1 else "run"
+    if cmd == "run":
+        os.makedirs(DIR, exist_ok=True)
+        os.execv(sys.executable, command(1, True))
+    elif cmd == "start":
+        start(int(argv[2]))
+    elif cmd == "stop":
+        stop(int(argv[2]) if len(argv) > 2 else None)
+    elif cmd == "cluster":
+        n = int(argv[2]) if len(argv) > 2 else 3
+        stop()
+        for i in range(2, n + 1):
+            start(i)
+        print("board 1: this terminal (Ctrl-A X quits; 'ssi-cm5 stop' stops the others)")
+        try:
+            subprocess.run(command(1, True))
+        finally:
+            stop()
+    else:
+        print(__doc__.split("\n\n")[1])
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

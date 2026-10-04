@@ -1,0 +1,153 @@
+# Active work
+
+This file is the durable resumption queue for user-directed and discovered work. Before
+implementation, follow `skills/agent/record-user-directed-work/SKILL.md`.
+Keep detailed designs in focused roadmap documents and link them here.
+
+## Detailed-roadmap lifecycle
+
+This file is the sole resumable queue. Create a supporting file beneath `docs/roadmap/`
+only when one item cannot keep a program's rationale, ordering, and acceptance contract
+readable. Put this visible header immediately after the detailed document's title:
+
+```markdown
+- **Status:** active
+- **Owning queue item:** [AREA-NNN](active-work.md#area-nnn-heading)
+- **Completion / archival evidence:** pending while AREA-NNN remains open
+```
+
+Status is exactly `active`, `partial`, `deferred`, `completed`, or `historical`. The
+owner must resolve to a checkbox or named program heading in this file. A terminal state
+requires linked evidence. Keep a completed plan here only when doing so preserves useful
+inbound links; move substantial closed programs beneath `docs/history/roadmap/`, retain
+their owner, and mark them `historical`. Do not create a separate file for an ordinary
+queue item or let `docs/roadmap/` become a plan archive.
+
+## P0
+
+Check the parent only after every required subtask and evidence item passes. Add the
+release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
+
+### [x] SSI-001 — Elixir/BEAM single-system-image OS for Raspberry Pi CM5 clusters
+
+- **Priority:** P0
+- **Owner:** project core (os/)
+- **Direction:** Build a stand-alone OS with the BEAM as its runtime and Elixir as the system programming language, inspired by PythonOS, RubyOS and RemoteOS-SDL; run natively on the Raspberry Pi Compute Module 5; present any number of CM5 nodes as one single-system-image cluster for computer-scientist users; offer a RemoteOS-SDL cluster desktop demo.
+- **Conclusion:** Linux (Raspberry Pi rpi-6.18.y, one image for CM5 and QEMU/KVM virt) is the hardware substrate only; a tiny C shim execs the BEAM as PID 1 and Elixir owns init, devices, networking, storage, the cluster, shell and desktop. A bare-metal ERTS port was rejected: CM5 networking sits behind PCIe->RP1->GEM and cannot be emulated or verified without hardware, while the SSI value lives above the driver layer. SSI is built from BEAM distribution with an Elixir epmd replacement, signed multicast discovery, a CRDT replicated store, a cluster VFS, cluster-wide process table and placement, failover services, and a RemoteOS protocol-v2 desktop that fails over between nodes.
+- **Depends on:** none
+- **Implementation:**
+  - [x] Pinned OTP/Elixir source toolchain image (`os/toolchain/`, OTP 29.1.1 + Elixir 1.20.4 from checksummed source on musl/arm64)
+  - [x] CM5+virt kernel fragment and build (`os/kernel/elixirssi.config` over `bcm2712_defconfig`, rpi-6.18.y)
+  - [x] PID-1 shim and syscall NIF (`os/substrate/`)
+  - [x] Elixir OS: boot, devices, net, cluster, store, VFS, processes, services, shell, ssh (`os/ssi/lib/ssi/`)
+  - [x] RemoteOS desktop with cluster apps, failover and per-app state restore
+  - [x] initramfs, QEMU cluster runner and CM5 eMMC image builder (`os/scripts/`)
+  - [x] Documentation and component specifications (`components/elixirssi/component.md`, `docs/architecture/elixirssi.md`, getting started)
+- **Evidence:**
+  - [x] Host ExUnit suite passes — `make test`: 22 tests incl. real multi-node peers (2026-10-01)
+  - [x] Single node boots to Elixir shell in QEMU/KVM with the shipped kernel — 6.18.54-elixirssi, ~3 s BEAM-to-prompt (2026-10-01)
+  - [x] Three-node QEMU cluster forms one system image (ps, fs, failover) under automated test — `make test-cluster` 17/17; service failover 9–10 s after VM kill (2026-10-01)
+  - [x] Headless RemoteOS-SDL desktop smoke captures a cluster desktop frame — `make test-desktop` 26/26 incl. input injection and desktop failover with state (2026-10-01)
+  - [x] CM5 eMMC image builds with bcm2712-rpi-cm5 DTBs, config.txt and initramfs — `make image-cm5`; `verify_cm5.py` 21/21 incl. boot-path driver coverage (2026-10-01)
+
+### [ ] SSI-002 — Validate ElixirSSI on physical Compute Module 5 hardware
+
+- **Priority:** P1
+- **Owner:** project core (os/)
+- **Direction:** Run the system on real CM5 boards, not only the identical kernel under KVM.
+- **Conclusion:** The CM5 boot path is verified statically (device-tree driver coverage, image layout, kernel header), the kernel and initramfs under KVM, and since SSI-005 the flashable image itself on emulated CM5 boards built from public documentation. Emulation models devices at the driver-contract level, not silicon; observing the system on physical CM5s closes the remaining gap.
+- **Depends on:** SSI-001
+- **Implementation:**
+  - [ ] Flash elixirssi-cm5.img to a CM5 on a CM5 IO board; capture the serial boot log
+  - [ ] Bring up a 3-node CM5 cluster on one switch, with and without DHCP
+  - [ ] Adapt test_cluster.py to drive hardware nodes over SSH
+- **Evidence:**
+  - [ ] Serial log shows the ElixirSSI banner on CM5 and CM5 Lite
+  - [ ] Three CM5s form one system, fail over a service, and draw the desktop
+
+### [x] SSI-003 — Encrypt and mutually authenticate cluster traffic
+
+- **Priority:** P2
+- **Owner:** project core (os/)
+- **Direction:** Make clusters safe on shared networks, not only dedicated ones.
+- **Conclusion:** Distribution is authenticated by a cookie derived from the cluster secret but is not encrypted. OTP TLS distribution with per-node certificates issued by a cluster CA derived at boot removes that limit without per-node provisioning.
+- **Depends on:** SSI-001
+- **Implementation:**
+  - [x] Derive a cluster CA and per-node certificates at boot (`SSI.Cluster.TLS`; deterministic Ed25519 CA)
+  - [x] Switch to inet_tls_dist with verify_peer (`rel/vm.args.eex`, `rel/overlays/ssl_dist.conf`)
+- **Evidence:**
+  - [x] Distribution between nodes is TLS with peer verification — `tls_test.exs`: separate inet_tls BEAMs pong with the secret, pang without (2026-10-02)
+  - [x] make test-cluster passes over TLS distribution — 18/18, connections report protocol :tls (2026-10-02)
+
+### [ ] SSI-004 — Shell on the HDMI console
+
+- **Priority:** P3
+- **Owner:** project core (os/)
+- **Direction:** Offer the system shell on a directly attached display and keyboard.
+- **Conclusion:** The shell is on the UART and SSH; HDMI shows kernel messages only. A second IEx server on /dev/tty1 needs a VT-aware IO server.
+- **Depends on:** SSI-001
+- **Implementation:**
+  - [x] Run an IEx server on /dev/tty1 with a VT-aware IO server (`SSI.Console.TTY`, `SSI.Console.IOServer`, `open_tty` NIF)
+  - [x] Virtio keyboard in the kernel and QEMU runner so the VT shell is testable (`CONFIG_VIRTIO_INPUT`)
+- **Evidence:**
+  - [x] VT shell under QEMU/KVM with the shipped kernel — `make test-cluster`: typed `node()` evaluated on tty1, read back from `/dev/vcs1`; `console_test.exs` (2026-10-02)
+  - [ ] A keyboard and display attached to a CM5 reach the Elixir shell — blocked on SSI-002 hardware
+
+### [x] SSI-005 — Emulate the Compute Module 5 hardware from public documentation
+
+- **Priority:** P1
+- **Owner:** project core (os/emulator)
+- **Direction:** Emulate the CM5 hardware from public documentation, as the uConsole project did for the CM4, so the flashable image can be booted and the cluster tested on modelled BCM2712 and RP1 hardware.
+- **Conclusion:** Adopt rpi5_machine (pinned, GPL-2.0-or-later QEMU model of the BCM2712: CPUs, GIC, UART10, SD hosts, firmware mailbox, PCIe root complexes, MIP) and add what the CM5 boot path needs and it lacks: an RP1 model (PCI function, MSI-X with IACK, SYSINFO, clocks/PLLs, GPIO, UART0-5, Cadence GEM Ethernet, two DWC3 xHCI hosts), a raspi-cm5 board with eMMC, a CM5 mode for its firmware-emulating boot script, and two QEMU fixes the CM5 exercises (SDHCI Auto CMD23 for eMMC writes; DWC3 latching ERSTBA on its low dword). Sources: the RP1 peripherals datasheet, the CM5 datasheets, the Linux drivers and device trees, and lspci of real RP1 hardware. Emulation is evidence for the model, not for silicon; SSI-002 stays open.
+- **Depends on:** SSI-001
+- **Implementation:**
+  - [x] Pinned emulator build: rpi5_machine + QEMU v11.1.1 + os/emulator patches (os/emulator/build-qemu.sh, make emulator)
+  - [x] RP1 model (os/emulator/qemu/overlay/hw/misc/rp1.c)
+  - [x] raspi-cm5 machine and rpi5-boot --board cm5 (os/emulator/base-patches/)
+  - [x] QEMU fixes: SDHCI Auto CMD23, DWC3 ERSTBA latch (os/emulator/qemu/patches/)
+  - [x] CM5 board runner and cluster test profile (os/scripts/ssi-cm5, test_cluster.py --board cm5)
+  - [x] Emulation design and fidelity record (docs/architecture/cm5-emulation.md)
+- **Evidence:**
+  - [x] Register-level RP1 tests pass without an OS — `make test-emulator`: 10/10 (identity, BARs, MSI-X edge and IACK delivery, aliases, GPIO interrupts, PLL lock, GEM identity) (2026-10-02)
+  - [x] Three emulated CM5 boards boot the unmodified flashable image from eMMC and pass the cluster acceptance suite — `make test-cm5`: 29/29, incl. CM5 identity, RP1 at lspci's BARs, eth0 via rp1_irq_chip, eMMC, USB keyboard to tty1, console on RP1 UART0, failover 9.1 s after a power pull; `make test-cluster` (virt) still 20/20 (2026-10-02)
+
+### [x] SSI-006 — Cluster status monitor that outlives the cluster
+
+- **Priority:** P1
+- **Owner:** project core (os/ssi, os/scripts)
+- **Direction:** Give users a browser UI for the cluster's status that shows both how the single system image behaves as a whole and how each member is doing, and that keeps working when the cluster is partly or entirely down: it must say whether the cluster is up, down, healthy or degraded, and why. Test everything end to end on a cluster of four emulated CM5 boards.
+- **Conclusion:** A monitor served by the cluster disappears exactly when it is needed, and WASM does not change what a browser can observe (HTTP/WebSocket only), so the monitor is one self-contained static page that runs from a local file (or a copy saved from any member) and the cluster side is a small read-only status endpoint on every member, not a singleton service: every member already holds the cluster-wide data. The page connects to every known member at once, remembers the last known cluster in the browser, compares members' views to detect a split, classifies unanswering members, and reads each member's record of how its previous boot ended. Controls (migrate, reboot) and TLS for the endpoint are out of scope until authentication is designed.
+- **Depends on:** SSI-001, SSI-005
+- **Implementation:**
+  - [x] Specify the monitor, status endpoint and boot record (now components/elixirssi-monitor/component.md, docs/architecture/elixirssi.md "Watching the system from outside")
+  - [x] SSI.Status: snapshot of system and members, event journal, previous-boot record (os/ssi/lib/ssi/status.ex, status/)
+  - [x] SSI.Web: HTTP and WebSocket status endpoint on every member (web.port; os/ssi/lib/ssi/web.ex)
+  - [x] Monitor page (os/ssi/priv/monitor/index.html), served by members and runnable from a file
+  - [x] Emulated management port and partitionable switch for boards (ssi-cm5: USB Ethernet; ssi-qemu: web forward; both: hub to switch A, hot-added switch B on its own port)
+  - [x] End-to-end browser test across four boards (os/scripts/test_monitor.py, scripts/browser/drive.mjs with pinned playwright-core 1.62.1, make test-monitor)
+  - [x] Discovered: a member could not boot after a power cut left zeros at the end of its store log (replay raised, the BEAM exited, the kernel panicked); replay now stops at the first undecodable record and truncates the log there (os/ssi/lib/ssi/store.ex, store_log_test.exs)
+- **Evidence:**
+  - [x] make test covers the snapshot, journal, boot record, HTTP and WebSocket endpoint, and torn store logs — 40 passed (status_test.exs, web_test.exs, store_log_test.exs) (2026-10-02)
+  - [x] Four emulated CM5 boards: the monitor shows healthy, a power pull (degraded, failover time, unclean previous boot), a partition (split) and its heal, the whole cluster down (last known state kept across a reload), and recovery — `make test-monitor`: 24/24; degraded 9.8 s after the pull, failover with 8 s unavailability in the timeline, split shown 18.8 s after the cut and held, healed in 1.5 s, down at once with every member remembered, healthy again 41 s after a cold start, no page errors, no overflow at 390 px (2026-10-02)
+  - [x] The same browser suite passes on four virt nodes — `make test-monitor BOARD=virt`: 24/24 (2026-10-02)
+  - [x] Existing suites still pass with the new runners (hub, management port) — `make test-cluster` 20/20, `make test-cm5` 29/29 (2026-10-02)
+
+### [x] SSI-007 — Authenticated controls and TLS for the status endpoint
+
+- **Priority:** P3
+- **Owner:** project core (os/ssi)
+- **Direction:** Follow-up from SSI-006: let the monitor act on the cluster (migrate a service, restart or power off a member) and reach members over TLS, once reaching the port is no longer enough to change the system.
+- **Conclusion:** Spec in components/elixirssi-monitor/component.md "Monitor controls and TLS" (the monitor became its own component when the ElixirSSI spec outgrew one document). Authentication: each browser holds a non-extractable ECDSA P-256 key (WebCrypto, IndexedDB); an operator who can already log in (console or SSH) issues a one-time 80-bit pairing code (`monitor_pair`), the monitor proves the code with an HMAC over the connection challenge, and the key is recorded in the replicated store. Every control request is signed over the connection's challenge with a rising sequence number (no forgery, alteration or replay), so it is safe over plain HTTP too; TLS adds confidentiality and server authentication. TLS uses a separate *web CA* with an ECDSA P-256 key derived from the secret, because browsers reject the Ed25519 distribution CA; leaf certificates name the host, localhost and the current addresses, are sent without the CA, and use a key derived from the secret and host name (stable across boots, so pinnable; TLS 1.3 key exchange keeps forward secrecy). Controls need WebCrypto, so they exist only from a local file or https.
+- **Depends on:** SSI-006
+- **Implementation:**
+  - [x] Spec: Monitor controls and TLS (component.md), architecture rationale
+  - [x] SSI.Web.Control: trusted keys, pairing codes, request verification, actions, journal `control` events, shell commands
+  - [x] SSI.Web.TLS: derived web CA, per-address leaf certificates; TLS listener on web.tls_port; GET /ca.pem
+  - [x] Monitor: pairing, key in IndexedDB, signed requests, member and service controls with in-page confirmation, wss endpoints
+  - [x] Emulation: forward the TLS port on the management port (CM5 8480+I, virt 8440+I)
+  - [x] control_test.exs; make test-monitor control and TLS phase
+  - [x] Split the monitor into its own component (components/elixirssi-monitor) when the ElixirSSI spec passed the 16 KiB description limit
+- **Evidence:**
+  - [x] Unauthenticated requests cannot change state; authenticated ones can, under make test-monitor: four emulated CM5s 38/38 and four virt nodes 38/38 (2026-10-03). Forged, unsigned and wrong-code requests and POST are refused with nothing changed; a browser paired with a shell code moves a service, restarts a member (after in-page confirmation) and powers one off (it returns reporting a clean power-off); each action is journalled with the operator's name; revocation removes the controls at once.
+  - [x] Every member's TLS certificate verifies against the web CA (fetched from /ca.pem) for its own host name with Python's ssl, another name is refused, and the browser reaches all members over wss:// pinned to exactly those certificates (headless Chromium cannot import a CA).
+  - [x] make test: 45 passed, including control_test.exs (pairing once and expiry, untrusted/bad/missing/altered signatures, replay on the same and another connection, revocation, hosted refusal, web CA determinism, TLS with IP and name verification, another cluster's CA refused).

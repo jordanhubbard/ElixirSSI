@@ -1,0 +1,25 @@
+# ElixirSSI — Raspberry Pi Compute Module 5 boot configuration.
+# The Pi 5 bootloader (EEPROM) reads this file from the first FAT partition,
+# picks the board's device tree (bcm2712-rpi-cm5*.dtb) automatically, and
+# starts the kernel with the initramfs that holds the whole operating system.
+[all]
+arm_64bit=1
+kernel=kernel_2712.img
+initramfs ssi-initramfs.cpio.gz followkernel
+# GPIO 14/15 UART on the IO board carries the system console (115200 8N1).
+# On a CM5, as on a Pi 5, serial0 means the debug UART unless uart0_console
+# moves the console to RP1's UART0 on the 40-pin header: the debug UART's
+# connector is not fitted on every CM5 (CM5 datasheet, 2.8).
+enable_uart=1
+dtparam=uart0_console
+# The OS does not use the GPU; keep its memory carve-out minimal.
+gpu_mem=16
+# No camera/display auto-detection: nothing in the system would use them.
+camera_auto_detect=0
+display_auto_detect=0
+disable_splash=1
+# This is not Raspberry Pi OS; do not warn about it.
+os_check=0
+# Uncomment to use an NVMe drive on the CM5 IO board's M.2 slot for /data.
+#dtparam=pciex1
+#dtparam=pciex1_gen=3

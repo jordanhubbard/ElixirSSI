@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ElixirSSI monitor</title>
+<!--
+  ElixirSSI cluster monitor. One self-contained file: no external resources.
+  Open it from disk, or from any member (http://MEMBER/), and save it.
+  It connects to every endpoint (a member's address and web port) at once,
+  remembers the cluster in this browser, and keeps working when members, or
+  all of them, are gone. Opened from a file or over https it can also act on
+  the cluster once paired, signing each request with a key this browser
+  cannot export. Specification: components/elixirssi-monitor/component.md.
+-->
+<style>
+  :root {
+    --bg: #14171f; --panel: #1b1f2a; --line: #2c3343; --fg: #e8eaf0; --dim: #8a90a2;
+    --ok: #3fb27f; --warn: #e0a43a; --bad: #e0524f; --split: #b07ce8; --info: #4c6fbf;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center;
+    padding: .75rem 1rem; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
+  header h1 small { color: var(--dim); font-weight: 400; }
+  .verdict { display: flex; gap: .6rem; align-items: baseline; margin-left: auto; }
+  .badge { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-weight: 600;
+    font-size: .8rem; background: var(--line); color: var(--fg); white-space: nowrap; }
+  .s-healthy, .s-up, .s-live { background: var(--ok); color: #071a10; }
+  .s-degraded, .s-joining, .s-connecting, .s-lost, .s-failed { background: var(--warn); color: #241600; }
+  .s-down, .s-missing, .s-refused, .s-timeout, .s-invalid { background: var(--bad); color: #fff; }
+  .s-split { background: var(--split); color: #12051f; }
+  .s-setup { background: var(--info); }
+  .dim { color: var(--dim); }
+  main { display: grid; gap: 1rem; padding: 1rem; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 1000px) { main { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+    #members, #services { grid-column: 1; } #timeline { grid-column: 2; grid-row: 2 / span 3; }
+    #endpoints, #control { grid-column: 2; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: .75rem 1rem; min-width: 0; }
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
+    margin: 0 0 .6rem; }
+  #reasons { margin: 0; padding: .5rem 1rem .5rem 2rem; border-bottom: 1px solid var(--line); }
+  #reasons:empty { display: none; }
+  #reasons li { margin: .15rem 0; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: .5rem; }
+  .fact b { display: block; font-size: 1.25rem; font-weight: 600; }
+  .fact span { color: var(--dim); font-size: .8rem; }
+  .cards { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+  .card { border: 1px solid var(--line); border-radius: 6px; padding: .6rem .7rem; min-width: 0; }
+  .card[data-state="missing"] { border-color: var(--bad); opacity: .85; }
+  .card[data-state="joining"] { border-color: var(--warn); }
+  .card h3 { margin: 0; font-size: 1rem; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+  .card dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .1rem .6rem; margin: .5rem 0 0; font-size: .85rem; }
+  .card dt { color: var(--dim); }
+  .card dd { margin: 0; overflow-wrap: anywhere; }
+  .chip { display: inline-block; border: 1px solid var(--line); border-radius: 4px; padding: 0 .3rem;
+    margin: 0 .2rem .2rem 0; font-size: .8rem; }
+  .group-tag { font-size: .75rem; color: var(--split); }
+  svg.spark { width: 100%; height: 28px; display: block; margin-top: .4rem; }
+  svg.spark polyline { fill: none; stroke: var(--info); stroke-width: 1.5; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+  th, td { text-align: left; padding: .25rem .5rem .25rem 0; border-bottom: 1px solid var(--line);
+    vertical-align: top; overflow-wrap: anywhere; }
+  th { color: var(--dim); font-weight: 500; }
+  ol.events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-y: auto; }
+  ol.events li { padding: .3rem 0; border-bottom: 1px solid var(--line); font-size: .85rem; overflow-wrap: anywhere; }
+  ol.events time { color: var(--dim); margin-right: .4rem; font-variant-numeric: tabular-nums; }
+  ul.endpoints { list-style: none; margin: 0 0 .6rem; padding: 0; }
+  ul.endpoints li { display: flex; flex-wrap: wrap; gap: .3rem .6rem; align-items: center; padding: .3rem 0;
+    border-bottom: 1px solid var(--line); font-size: .85rem; }
+  ul.endpoints code { overflow-wrap: anywhere; }
+  form { display: flex; gap: .4rem; flex-wrap: wrap; }
+  input { flex: 1 1 12rem; min-width: 0; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 4px; padding: .35rem .5rem; font: inherit; }
+  button { background: var(--line); color: var(--fg); border: 1px solid var(--line); border-radius: 4px;
+    padding: .3rem .6rem; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--dim); }
+  button.small { padding: 0 .4rem; font-size: .75rem; }
+  button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+  .actions { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .5rem; }
+  select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px;
+    font: inherit; font-size: .8rem; max-width: 9rem; }
+  #control p { margin: .2rem 0 .6rem; }
+  #control-result[data-ok="false"] { color: var(--bad); }
+  #control-result[data-ok="true"] { color: var(--ok); }
+</style>
+</head>
+<body data-verdict="connecting">
+<header>
+  <h1>ElixirSSI <small id="cluster-name"></small></h1>
+  <div class="verdict" role="status" aria-live="polite">
+    <span id="verdict" class="badge s-connecting">Connecting</span>
+    <span id="verdict-since" class="dim"></span>
+  </div>
+</header>
+<ul id="reasons" aria-label="Reasons"></ul>
+<main>
+  <section id="system" aria-labelledby="system-h">
+    <h2 id="system-h">System</h2>
+    <div id="system-body"></div>
+  </section>
+  <section id="members" aria-labelledby="members-h">
+    <h2 id="members-h">Members</h2>
+    <div id="member-cards" class="cards"></div>
+  </section>
+  <section id="services" aria-labelledby="services-h">
+    <h2 id="services-h">Services</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Service</th><th>Running on</th><th>Should run on</th><th>Pinned</th><th>Module</th><th id="move-h" hidden>Move</th></tr></thead>
+      <tbody id="service-rows"></tbody>
+    </table></div>
+  </section>
+  <section id="timeline" aria-labelledby="timeline-h">
+    <h2 id="timeline-h">Timeline</h2>
+    <ol id="events" class="events"></ol>
+  </section>
+  <section id="endpoints" aria-labelledby="endpoints-h">
+    <h2 id="endpoints-h">Endpoints</h2>
+    <ul id="endpoint-list" class="endpoints"></ul>
+    <form id="add-endpoint">
+      <input id="endpoint-input" name="endpoint" placeholder="address[:port] or https://address[:port]" aria-label="Endpoint" autocomplete="off">
+      <button type="submit">Add</button>
+    </form>
+  </section>
+  <section id="control" aria-labelledby="control-h">
+    <h2 id="control-h">Control</h2>
+    <p id="control-state" data-paired="no"></p>
+    <form id="pair-form" hidden>
+      <input id="pair-code" placeholder="code from monitor_pair(&quot;name&quot;) in a shell" aria-label="Pairing code" autocomplete="off">
+      <button type="submit">Pair</button>
+    </form>
+    <p id="control-result" class="dim" role="status" aria-live="polite"></p>
+    <p id="control-security" class="dim"></p>
+  </section>
+</main>
+<script>
+"use strict";
+(() => {
+  const STORE = "elixirssi-monitor/1";
+  const CONNECT_TIMEOUT = 4000;   // no answer in this long: not responding
+  const REFUSED_MS = 1000;        // failed faster than this: refusing connections
+  const STALE_MS = 5000;          // snapshots arrive every second
+  const SPLIT_MS = 10000;         // memberships must disagree this long
+  const JOINING_MS = 60000;       // a member this young is still joining
+  const COLLAPSE_MS = 30000;      // observations of one membership change
+  const MAX_EVENTS = 500;
+
+  const now = () => Date.now();
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+  // -- memory --------------------------------------------------------------------
+
+  const S = load();
+  const conn = {};               // endpoint -> live connection state (not persisted)
+  let disagreeSince = null;
+
+  function load() {
+    try {
+      const s = JSON.parse(localStorage.getItem(STORE));
+      if (s && s.v === 1) return s;
+    } catch (e) { /* first run, or storage unavailable */ }
+    return { v: 1, endpoints: {}, members: {}, events: {}, lastLive: null, verdict: null, cluster: null };
+  }
+
+  let saveTimer = null;
+  function save() {
+    if (saveTimer) return;
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { /* full or unavailable */ }
+    }, 300);
+  }
+
+  function addEvent(ev) {
+    if (!ev || !ev.id || S.events[ev.id]) return;
+    S.events[ev.id] = ev;
+    const ids = Object.keys(S.events);
+    if (ids.length > MAX_EVENTS) {
+      ids.sort((a, b) => S.events[a].at - S.events[b].at)
+        .slice(0, ids.length - MAX_EVENTS).forEach((id) => delete S.events[id]);
+    }
+    save();
+  }
+
+  let seq = 0;
+  function monitorEvent(kind, subject, detail) {
+    addEvent({ id: `monitor-${now()}-${seq++}`, at: now(), kind, subject, origin: "monitor", detail: detail || {} });
+  }
+
+  // -- endpoints -----------------------------------------------------------------
+
+  // An endpoint is HOST:PORT (WebSocket) or https://HOST:PORT (secure WebSocket).
+  function normalize(text) {
+    const raw = String(text || "").trim();
+    const secure = /^(https|wss):\/\//i.test(raw);
+    const t = raw.replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "");
+    if (!/^[\w.\-:[\]]+$/.test(t)) return null;
+    return secure ? `https://${t}` : t;
+  }
+
+  // A page served over https may only open secure WebSockets.
+  const streamURL = (key) => {
+    const secure = key.startsWith("https://") || location.protocol === "https:";
+    return `${secure ? "wss" : "ws"}://${key.replace(/^https:\/\//, "")}/api/stream`;
+  };
+
+  function addEndpoint(text, source) {
+    const key = normalize(text);
+    if (!key) return false;
+    if (!S.endpoints[key]) { S.endpoints[key] = { source, added: now(), lastLive: null }; save(); }
+    if (!conn[key]) connect(key);
+    return true;
+  }
+
+  function removeEndpoint(key) {
+    const c = conn[key];
+    if (c) { c.removed = true; clearTimeout(c.timer); clearTimeout(c.retry); if (c.ws) detach(c); }
+    delete conn[key];
+    delete S.endpoints[key];
+    save();
+    render();
+  }
+
+  const LABEL = {
+    connecting: "connecting",
+    live: "live",
+    lost: "connection lost",
+    refused: "refusing connections (reachable, nothing serving: booting or stopped)",
+    timeout: "not responding (off, disconnected or unreachable from here)",
+    failed: "connection failed",
+    invalid: "not a usable address",
+  };
+
+  function setStatus(key, status) {
+    const c = conn[key];
+    if (!c || c.status === status) return;
+    const was = c.status;
+    c.status = status;
+    c.since = now();
+    if (status === "live" || was === "live") monitorEvent("endpoint", key, { status, label: LABEL[status] });
+    schedule();
+  }
+
+  function detach(c) {
+    const ws = c.ws;
+    c.ws = null;
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    c.challenge = null;
+    try { ws.close(); } catch (e) { /* already closed */ }
+  }
+
+  function connect(key) {
+    const c = conn[key] || (conn[key] = { status: "connecting", since: now(), backoff: 1000 });
+    if (!S.endpoints[key] || c.removed) return;
+    const t0 = now();
+    let ws;
+    try { ws = new WebSocket(streamURL(key)); }
+    catch (e) { setStatus(key, "invalid"); return; }
+    c.ws = ws;
+    c.opened = false;
+    c.timer = setTimeout(() => {
+      if (c.ws === ws && !c.opened) { detach(c); setStatus(key, "timeout"); retry(key); }
+    }, CONNECT_TIMEOUT);
+    ws.onopen = () => { c.opened = true; clearTimeout(c.timer); c.backoff = 1000; };
+    ws.onmessage = (m) => {
+      let msg;
+      try { msg = JSON.parse(m.data); } catch (e) { return; }
+      onMessage(key, msg);
+    };
+    ws.onclose = () => {
+      clearTimeout(c.timer);
+      c.ws = null;
+      c.challenge = null;
+      if (c.opened) setStatus(key, "lost");
+      else setStatus(key, now() - t0 < REFUSED_MS ? "refused" : "failed");
+      retry(key);
+    };
+  }
+
+  function retry(key) {
+    const c = conn[key];
+    if (!c || c.removed) return;
+    clearTimeout(c.retry);
+    c.retry = setTimeout(() => connect(key), c.backoff);
+    c.backoff = Math.min(c.backoff * 2, 5000);
+  }
+
+  // A connection to a member that lost power is not closed by anyone: notice
+  // the silence instead.
+  function checkStale() {
+    for (const [key, c] of Object.entries(conn)) {
+      if (c.ws && c.status === "live" && now() - c.rx > STALE_MS) {
+        detach(c);
+        setStatus(key, "timeout");
+        retry(key);
+      }
+    }
+  }
+
+  function onMessage(key, msg) {
+    const c = conn[key];
+    if (!c) return;
+    c.rx = now();
+    if (msg.type === "snapshot" && msg.status && msg.status.schema === "elixirssi-status/1") {
+      c.snapshot = msg.status;
+      c.snapAt = now();
+      S.endpoints[key].lastLive = now();
+      S.lastLive = now();
+      absorb(msg.status);
+      (msg.status.journal || []).forEach(addEvent);
+      setStatus(key, "live");
+    } else if (msg.type === "event") {
+      addEvent(msg.event);
+    } else if (msg.type === "hello") {
+      // Requests on this connection are signed over its challenge.
+      c.challenge = msg.challenge;
+      c.tls = !!msg.tls;
+      c.ctlSeq = 0;
+    } else if (msg.type === "result") {
+      const what = pending[`${key}#${msg.seq}`];
+      delete pending[`${key}#${msg.seq}`];
+      if (what) {
+        if (what.kind === "pair" && msg.ok) { S.keyName = msg.value.name; save(); }
+        showResult(msg.ok, `${what.text}: ${msg.ok ? "done" : msg.error}`);
+      }
+    }
+    schedule();
+  }
+
+  // Members are remembered by host name and matched by node name, which a
+  // snapshot always carries (a member that has only just joined may not be
+  // described yet).
+  function hostOf(m) {
+    if (m.hostname) return m.hostname;
+    const known = Object.values(S.members).find((r) => r.node === m.node);
+    return known ? known.hostname : null;
+  }
+
+  function absorb(status) {
+    S.cluster = status.system.cluster;
+    for (const m of status.members) {
+      const host = hostOf(m);
+      if (!host) continue;
+      // One record per node: a member renamed, or remembered before it was described.
+      for (const [k, r] of Object.entries(S.members)) if (r.node === m.node && k !== host) delete S.members[k];
+      const prev = S.members[host] || {};
+      const fresh = m.hostname ? m : { node: m.node, load: m.load, services: m.services };
+      S.members[host] = { ...prev, ...fresh, hostname: host, load: m.load || prev.load, lastSeen: now(),
+        firstSeen: prev.firstSeen || now(), seenBy: status.observer.hostname };
+    }
+    save();
+  }
+
+  const nameOf = (node) => (Object.values(S.members).find((r) => r.node === node) || {}).hostname || node;
+
+  // -- the verdict -----------------------------------------------------------------
+
+  function uptime(m) {
+    return m && m.load && m.booted_at ? m.load.at - m.booted_at : null;
+  }
+
+  function derive() {
+    const t = now();
+    const keys = Object.keys(S.endpoints);
+    const views = keys
+      .map((k) => conn[k])
+      .filter((c) => c && c.status === "live" && c.snapshot && t - c.snapAt < STALE_MS)
+      .map((c) => {
+        const s = c.snapshot;
+        const self = s.members.find((m) => m.node === s.observer.node);
+        const age = uptime(self);
+        return { snap: s, observer: s.observer.node, members: s.members.map((m) => m.node).sort(),
+          joining: age !== null && age < JOINING_MS && s.members.length === 1 };
+      });
+
+    // One view per observing member (several endpoints may reach one member).
+    const byObserver = {};
+    views.forEach((v) => { byObserver[v.observer] = v; });
+    const settled = Object.values(byObserver).filter((v) => !v.joining);
+    const groups = {};
+    settled.forEach((v) => {
+      const g = (groups[v.members.join(" ")] ||= { members: v.members, observers: [], views: [] });
+      g.observers.push(v.observer);
+      g.views.push(v);
+    });
+    const groupList = Object.values(groups).sort((a, b) => b.members.length - a.members.length);
+    if (groupList.length > 1) disagreeSince ??= t; else disagreeSince = null;
+    const split = groupList.length > 1 && t - disagreeSince > SPLIT_MS;
+
+    const up = new Set(views.flatMap((v) => v.members));
+    const joining = new Set(Object.values(byObserver).filter((v) => v.joining).map((v) => v.observer));
+    const missing = Object.values(S.members).filter((m) => !up.has(m.node)).map((m) => m.hostname).sort();
+
+    // Services: each group runs its own copy during a split.
+    const services = {};
+    for (const v of views) {
+      for (const s of v.snap.services) {
+        const e = (services[s.name] ||= { name: s.name, module: s.module, pinned: s.pinned, owner: s.owner, on: new Set() });
+        if (s.running && s.node) e.on.add(nameOf(s.node));
+        if (v === (groupList[0] && groupList[0].views[0])) e.owner = s.owner;
+      }
+    }
+    const down = Object.values(services).filter((s) => s.on.size === 0).map((s) => s.name).sort();
+
+    const memberGroup = {};
+    if (split) groupList.forEach((g, i) => g.members.forEach((h) => { memberGroup[h] = i; }));
+
+    let state, reasons = [];
+    if (keys.length === 0) {
+      state = "setup";
+      reasons.push("Add an endpoint: the address and web port of any member (for example 192.168.1.20:80, or https://192.168.1.20 for TLS).");
+    } else if (views.length === 0) {
+      const pending = keys.every((k) => !conn[k] || conn[k].status === "connecting");
+      state = pending && !S.lastLive ? "connecting" : "down";
+      if (state === "down") {
+        reasons.push(S.lastLive ? `No member has answered since ${clock(S.lastLive)}.` : "No member has answered yet.");
+        keys.forEach((k) => {
+          const c = conn[k];
+          if (c) reasons.push(`${k}: ${LABEL[c.status] || c.status} since ${clock(c.since)}`);
+        });
+      }
+    } else if (split) {
+      state = "split";
+      reasons.push(`Members have disagreed about the membership since ${clock(disagreeSince)}`);
+      groupList.forEach((g, i) => reasons.push(
+        `group ${i + 1}: ${g.observers.map(nameOf).join(", ")} see {${g.members.map(nameOf).join(", ")}}`));
+    } else if (missing.length || down.length) {
+      state = "degraded";
+      missing.forEach((h) => {
+        const m = S.members[h];
+        reasons.push(`${h} is missing; last seen ${clock(m.lastSeen)}`);
+      });
+      down.forEach((s) => reasons.push(`service ${s} is not running`));
+    } else {
+      state = "healthy";
+    }
+    joining.forEach((n) => reasons.push(`${nameOf(n)} is joining`));
+
+    if (!S.verdict || S.verdict.state !== state) {
+      if (S.verdict || state !== "connecting") monitorEvent("verdict", state, { reason: reasons[0] || "" });
+      S.verdict = { state, since: t };
+      save();
+    }
+    return { state, reasons, views, groupList, split, up, joining, missing, services, memberGroup };
+  }
+
+  // -- rendering -------------------------------------------------------------------
+
+  const NAMES = { healthy: "Healthy", degraded: "Degraded", split: "Split", down: "Down",
+    connecting: "Connecting", setup: "Set up" };
+
+  function clock(ms) {
+    if (!ms) return "never";
+    const d = new Date(ms);
+    const same = new Date().toDateString() === d.toDateString();
+    return same ? d.toLocaleTimeString([], { hour12: false }) : d.toLocaleString([], { hour12: false });
+  }
+
+  function ago(ms) {
+    const s = Math.max(0, Math.round((now() - ms) / 1000));
+    return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+  }
+
+  function span(ms) {
+    if (ms == null) return "?";
+    const s = Math.round(ms / 1000);
+    if (s < 120) return `${s}s`;
+    if (s < 7200) return `${Math.round(s / 60)} min`;
+    return s < 172800 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86400)} d`;
+  }
+
+  function bytes(n) {
+    if (!n) return "0";
+    const u = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(n < 10 && i ? 1 : 0)} ${u[i]}`;
+  }
+
+  const pct = (x) => `${Math.round((x || 0) * 100)}%`;
+
+  function spark(history) {
+    const h = (history || []).slice().reverse();
+    if (h.length < 2) return "";
+    const pts = h.map((v, i) => `${(i / (h.length - 1)) * 100},${28 - Math.min(1, v) * 26 - 1}`).join(" ");
+    return `<svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}"/></svg>`;
+  }
+
+  function prevBoot(p) {
+    if (!p || p.ended === "unknown") return "no record";
+    if (p.ended === "clean") return `ended cleanly (${esc(p.action)})${p.at ? " at " + clock(p.at) : ""}`;
+    return `ended uncleanly (power loss, panic or BEAM failure); last alive ${clock(p.alive_at)}`;
+  }
+
+  function eventText(e) {
+    const d = e.detail || {};
+    const s = `<b>${esc(e.subject)}</b>`;
+    switch (e.kind) {
+      case "member_joined": return `${s} joined`;
+      case "member_left": return `${s} left`;
+      case "member_booted": return `${s} booted; previous boot ${prevBoot(d.previous_boot)}`;
+      case "service_started":
+        if (d.how === "failover") return `service ${s} failed over from ${esc(d.from)} to ${esc(e.origin)}; unavailable ${span(d.unavailable_ms)}`;
+        if (d.how === "migrated") return `service ${s} moved from ${esc(d.from)} to ${esc(e.origin)}`;
+        return `service ${s} ${esc(d.how || "started")} on ${esc(e.origin)}`;
+      case "service_stopped": return `service ${s} stopped on ${esc(e.origin)}: ${esc(d.reason)}`;
+      case "verdict": return `cluster ${s}${d.reason ? ": " + esc(d.reason) : ""}`;
+      case "endpoint": return `endpoint ${s}: ${esc(d.label || d.status)}`;
+      case "control": {
+        if (d.action === "pair") return `a monitor was paired as ${s} (key ${esc(d.key)})`;
+        const what = d.action === "migrate" ? `moved service ${s} to ${esc(d.to)}`
+          : `${d.action === "poweroff" ? "powered off" : "restarted"} ${s}`;
+        return `${esc(d.by)} ${what} from a monitor${d.ok ? "" : ` — failed: ${esc(d.error)}`}`;
+      }
+      default: return `${esc(e.kind)} ${s}`;
+    }
+  }
+
+  // Every observer records membership changes; show each change once.
+  function timeline() {
+    const evs = Object.values(S.events).sort((a, b) => b.at - a.at);
+    const out = [];
+    for (const e of evs) {
+      if (e.kind === "member_joined" || e.kind === "member_left") {
+        const same = out.find((o) => o.kind === e.kind && o.subject === e.subject && Math.abs(o.at - e.at) < COLLAPSE_MS);
+        if (same) { if (!same.observers.includes(e.origin)) same.observers.push(e.origin); continue; }
+        out.push({ ...e, observers: [e.origin] });
+      } else {
+        out.push(e);
+      }
+    }
+    return out;
+  }
+
+  function render() {
+    renderTimer = null;
+    checkStale();
+    const d = derive();
+    document.body.dataset.verdict = d.state;
+    const badge = $("verdict");
+    badge.textContent = NAMES[d.state];
+    badge.className = `badge s-${d.state}`;
+    $("verdict-since").textContent = S.verdict ? `since ${clock(S.verdict.since)}` : "";
+    $("cluster-name").textContent = S.cluster ? `cluster “${S.cluster}”` : "";
+    $("reasons").innerHTML = d.reasons.map((r) => `<li>${esc(r)}</li>`).join("");
+    d.trusted = trusted(d);
+    renderSystem(d);
+    renderMembers(d);
+    renderServices(d);
+    renderControl(d);
+    $("events").innerHTML = timeline().map((e) =>
+      `<li data-kind="${esc(e.kind)}" data-subject="${esc(e.subject)}"${e.detail && e.detail.how ? ` data-how="${esc(e.detail.how)}"` : ""}` +
+      `${e.detail && e.detail.action ? ` data-action="${esc(e.detail.action)}" data-ok="${!!e.detail.ok}"` : ""}>` +
+      `<time>${clock(e.at)}</time>${eventText(e)}` +
+      (e.observers ? ` <span class="dim">(seen by ${e.observers.map(esc).join(", ")})</span>` : e.origin === "monitor" ? ` <span class="dim">(this browser)</span>` : "") +
+      `</li>`).join("") || `<li class="dim">No events yet.</li>`;
+    renderEndpoints();
+  }
+
+  function renderSystem(d) {
+    const best = d.groupList[0] && d.groupList[0].views[0];
+    const known = Object.keys(S.members).length;
+    let sys, members, live = true;
+    if (best) {
+      sys = best.snap.system;
+      members = best.snap.members;
+    } else {
+      live = false;
+      members = Object.values(S.members);
+      sys = {
+        members: 0,
+        cores: members.reduce((a, m) => a + (m.cores || 0), 0),
+        schedulers: members.reduce((a, m) => a + (m.schedulers || 0), 0),
+        memory: members.reduce((a, m) => a + (m.memory || 0), 0),
+        util: null, processes: null,
+      };
+    }
+    // Mean of the members' utilisation histories, newest first.
+    const hs = members.map((m) => (m.load && m.load.history) || []).filter((h) => h.length);
+    const len = Math.min(...hs.map((h) => h.length), 60);
+    const mean = hs.length ? Array.from({ length: len }, (_, i) => hs.reduce((a, h) => a + h[i], 0) / hs.length) : [];
+    const fact = (k, v, label) => `<div class="fact" data-fact="${k}"><b>${esc(v)}</b><span>${esc(label)}</span></div>`;
+    $("system-body").innerHTML =
+      `<div class="facts">` +
+      fact("members", `${d.up.size} / ${known}`, "members up / known") +
+      fact("cores", sys.cores, live ? "cores" : "cores (last known)") +
+      fact("schedulers", sys.schedulers, "schedulers") +
+      fact("memory", bytes(sys.memory), "memory") +
+      fact("util", sys.util == null ? "–" : pct(sys.util), "utilisation") +
+      fact("processes", sys.processes == null ? "–" : sys.processes, "processes") +
+      `</div>` + (live ? spark(mean) : `<p class="dim">Last known resources of the remembered members; nothing answers now.</p>`) +
+      (d.split ? `<p class="dim">Resources and utilisation as group 1 sees them.</p>` : "") +
+      (live && sys.insecure_secret ? `<p class="dim">This cluster uses the published default secret.</p>` : "");
+  }
+
+  function renderMembers(d) {
+    const names = Object.keys(S.members).sort();
+    $("member-cards").innerHTML = names.map((h) => {
+      const m = S.members[h];
+      const state = d.joining.has(m.node) ? "joining" : d.up.has(m.node) ? "up" : "missing";
+      const l = m.load || {};
+      const group = m.node in d.memberGroup ? `<span class="group-tag">group ${d.memberGroup[m.node] + 1}</span>` : "";
+      const pb = (m.previous_boot && m.previous_boot.ended) || "unknown";
+      const rows = [
+        ["model", m.model],
+        ["node", m.node],
+        ["uptime", state === "missing" ? "–" : span(uptime(m))],
+        ["load", `${pct(l.util)} · run queue ${l.run_queue ?? "?"} · ${l.processes ?? "?"} processes`],
+        ["memory", l.mem_total ? `${bytes(l.mem_total - l.mem_available)} of ${bytes(l.mem_total)} used` : bytes(m.memory)],
+        ["cores", `${m.cores ?? "?"} (${m.schedulers ?? "?"} schedulers)`],
+      ];
+      if (l.temperature != null) rows.push(["temp", `${l.temperature.toFixed(1)} °C`]);
+      rows.push(["services", (m.services || []).map((s) => `<span class="chip">${esc(s)}</span>`).join("") || `<span class="dim">none</span>`, true]);
+      rows.push(["last boot", prevBoot(m.previous_boot), true]);
+      if (state === "missing") rows.push(["last seen", `${clock(m.lastSeen)} (${ago(m.lastSeen)}) by ${esc(m.seenBy)}`, true]);
+      return `<article class="card" data-member="${esc(h)}" data-state="${state}" data-prev-boot="${esc(pb)}">` +
+        `<h3>${esc(h)} <span class="badge s-${state}">${state}</span>${group}` +
+        `<button class="small" data-forget="${esc(h)}" title="Forget this member" style="margin-left:auto">forget</button></h3>` +
+        `<dl>${rows.map(([k, v, html]) => `<dt>${k}</dt><dd>${html ? v : esc(v ?? "?")}</dd>`).join("")}</dl>` +
+        (state === "missing" ? "" : spark(l.history)) +
+        (d.trusted && state !== "missing" ? `<div class="actions">${armButton("restart", h, "restart")}${armButton("poweroff", h, "power off")}</div>` : "") +
+        `</article>`;
+    }).join("") || `<p class="dim">No members seen yet.</p>`;
+  }
+
+  function renderServices(d) {
+    // Leave the table alone while a move target is being chosen.
+    if (document.activeElement && document.activeElement.dataset.moveSelect) return;
+    const rows = Object.values(d.services).sort((a, b) => a.name.localeCompare(b.name));
+    const up = Object.values(S.members).filter((m) => d.up.has(m.node)).map((m) => m.hostname).sort();
+    $("move-h").hidden = !d.trusted;
+    $("service-rows").innerHTML = rows.map((s) => {
+      const on = [...s.on].sort();
+      return `<tr data-service="${esc(s.name)}" data-running="${on.length > 0}" data-node="${esc(on.join(" "))}">` +
+        `<td>${esc(s.name)}</td>` +
+        `<td>${on.length ? on.map(esc).join(", ") : `<span class="badge s-down">not running</span>`}${on.length > 1 ? ` <span class="badge s-split">${on.length} copies</span>` : ""}</td>` +
+        `<td>${s.owner ? esc(nameOf(s.owner)) : ""}</td>` +
+        `<td>${s.pinned ? esc(nameOf(s.pinned)) : `<span class="dim">no</span>`}</td>` +
+        `<td>${esc(s.module)}</td>` + (d.trusted ? `<td>${moveCell(s.name, up.filter((h) => !on.includes(h)))}</td>` : "") + `</tr>`;
+    }).join("") || `<tr><td colspan="6" class="dim">${d.views.length ? "No services registered." : "Unknown: nothing answers."}</td></tr>`;
+  }
+
+  function renderEndpoints() {
+    const keys = Object.keys(S.endpoints).sort();
+    $("endpoint-list").innerHTML = keys.map((k) => {
+      const c = conn[k] || { status: "connecting" };
+      const e = S.endpoints[k];
+      const observer = c.status === "live" && c.snapshot ? ` → ${esc(c.snapshot.observer.hostname || c.snapshot.observer.node)}` : "";
+      const tls = c.status === "live" && c.tls ? ` <span class="chip" title="TLS">TLS</span>` : "";
+      return `<li data-endpoint="${esc(k)}" data-status="${c.status}" data-tls="${!!(c.status === "live" && c.tls)}"><code>${esc(k)}</code>${observer}${tls}` +
+        `<span class="badge s-${c.status}">${esc(c.status)}</span>` +
+        `<span class="dim">${c.status === "live" ? "" : esc(LABEL[c.status] || "")}` +
+        `${c.since ? ` since ${clock(c.since)}` : ""}${c.status !== "live" && e.lastLive ? `; last answered ${clock(e.lastLive)}` : ""}</span>` +
+        `<button class="small" data-remove="${esc(k)}" style="margin-left:auto">remove</button></li>`;
+    }).join("") || `<li class="dim">No endpoints.</li>`;
+  }
+
+  // -- control ---------------------------------------------------------------------
+  //
+  // This browser's key pair lives in IndexedDB; its private half cannot be
+  // exported, only used. WebCrypto exists only in secure contexts (a local
+  // file, https), so elsewhere the monitor stays read-only.
+
+  const CAN_CONTROL = window.isSecureContext && !!(window.crypto && crypto.subtle) && !!window.indexedDB;
+  const ARM_MS = 5000;             // a restart or power-off must be confirmed within this
+  let myKey = null;                // {id, pub, priv}
+  let armed = null;                // {act, target, until}
+  const moveTo = {};               // service -> chosen member
+  const pending = {};              // "endpoint#seq" -> {kind, text}
+  let lastResult = null;
+
+  const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+  const b64url = (buf) => b64(buf).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const utf8 = (text) => new TextEncoder().encode(text);
+
+  function keyStore(mode, fn) {
+    return new Promise((resolve, reject) => {
+      const open = indexedDB.open("elixirssi-monitor", 1);
+      open.onupgradeneeded = () => open.result.createObjectStore("keys");
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const tx = open.result.transaction("keys", mode);
+        const req = fn(tx.objectStore("keys"));
+        tx.oncomplete = () => { open.result.close(); resolve(req.result); };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }
+
+  async function loadKey() {
+    try { myKey = (await keyStore("readonly", (st) => st.get("browser"))) || null; } catch (e) { myKey = null; }
+    schedule();
+  }
+
+  async function makeKey() {
+    const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+    const raw = await crypto.subtle.exportKey("raw", pair.publicKey);
+    const key = { id: b64url(await crypto.subtle.digest("SHA-256", raw)).slice(0, 16), pub: b64url(raw), priv: pair.privateKey };
+    await keyStore("readwrite", (st) => st.put(key, "browser"));
+    myKey = key;
+    return key;
+  }
+
+  function trusted(d) {
+    return !!myKey && d.views.some((v) => ((v.snap.control || {}).keys || []).includes(myKey.id));
+  }
+
+  // The member a request concerns, if it answers; else any member that does.
+  function channel(node) {
+    const live = Object.entries(conn).filter(([, c]) => c.ws && c.ws.readyState === 1 && c.status === "live" && c.challenge);
+    return live.find(([, c]) => c.snapshot && c.snapshot.observer.node === node) || live[0] || null;
+  }
+
+  function showResult(ok, text) {
+    lastResult = { ok, text, at: now() };
+    schedule();
+  }
+
+  function transmit(endpoint, c, ws, msg, what) {
+    if (c.ws !== ws) return showResult(false, `${what.text}: the connection changed; try again`);
+    const seq = JSON.parse(msg.request).seq;
+    pending[`${endpoint}#${seq}`] = what;
+    ws.send(JSON.stringify(msg));
+    showResult(null, `${what.text}: sent to ${c.snapshot.observer.hostname || endpoint}`);
+  }
+
+  async function pair(code) {
+    const clean = code.toUpperCase().replace(/[^A-Z2-7]/g, "");
+    if (clean.length !== 16) return showResult(false, "A pairing code has 16 letters and digits.");
+    const ch = channel(null);
+    if (!ch) return showResult(false, "pairing: no member answers");
+    const key = myKey || await makeKey();
+    const [endpoint, c] = ch;
+    const ws = c.ws;
+    const request = JSON.stringify({ seq: ++c.ctlSeq, key: key.pub });
+    const hmac = await crypto.subtle.importKey("raw", utf8(clean), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const mac = await crypto.subtle.sign("HMAC", hmac, utf8(`elixirssi-pair/1\n${c.challenge}\n${request}`));
+    transmit(endpoint, c, ws, { type: "pair", request, mac: b64(mac) }, { kind: "pair", text: "pairing" });
+  }
+
+  async function control(body, text, node) {
+    const ch = channel(node);
+    if (!myKey) return showResult(false, `${text}: this browser is not paired`);
+    if (!ch) return showResult(false, `${text}: no member answers`);
+    const [endpoint, c] = ch;
+    const ws = c.ws;
+    const request = JSON.stringify({ key: myKey.id, seq: ++c.ctlSeq, ...body });
+    const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, myKey.priv,
+      utf8(`elixirssi-action/1\n${c.challenge}\n${request}`));
+    transmit(endpoint, c, ws, { type: "action", request, sig: b64(sig) }, { kind: "action", text });
+  }
+
+  const isArmed = (act, target) => armed && armed.act === act && armed.target === target && now() < armed.until;
+
+  function armButton(act, target, label) {
+    const on = isArmed(act, target);
+    return `<button class="small${on ? " danger" : ""}" data-act="${act}" data-target="${esc(target)}">${on ? `confirm ${label}` : label}</button>`;
+  }
+
+  function moveCell(name, choices) {
+    if (!choices.length) return `<span class="dim">–</span>`;
+    if (!choices.includes(moveTo[name])) moveTo[name] = choices[0];
+    return `<select data-move-select="${esc(name)}" aria-label="Move ${esc(name)} to">` +
+      choices.map((h) => `<option${h === moveTo[name] ? " selected" : ""}>${esc(h)}</option>`).join("") +
+      `</select> <button class="small" data-move="${esc(name)}">move</button>`;
+  }
+
+  function renderControl(d) {
+    const st = $("control-state");
+    let state, text;
+    if (!CAN_CONTROL) {
+      state = "unavailable";
+      text = "Read-only here: browsers allow signing keys only in pages opened from a file or over https.";
+    } else if (d.trusted) {
+      state = "yes";
+      text = `This browser is paired${S.keyName ? ` as “${S.keyName}”` : ""} (key ${myKey.id}). Restart and power off are on each member; moves are under Services.`;
+    } else if (!d.views.length) {
+      state = myKey ? "unknown" : "no";
+      text = "Nothing answers, so nothing can be changed.";
+    } else if (myKey && S.keyName) {
+      state = "revoked";
+      text = `The cluster no longer trusts this browser's key (${myKey.id}). Pair again with a new code.`;
+    } else {
+      state = "no";
+      text = "Read-only. To act on the cluster, run monitor_pair(\"name\") in a shell on any member and enter the code here.";
+    }
+    st.dataset.paired = state;
+    st.textContent = text;
+    $("pair-form").hidden = !CAN_CONTROL || d.trusted || !d.views.length;
+    const r = $("control-result");
+    r.textContent = lastResult ? `${clock(lastResult.at)} ${lastResult.text}` : "";
+    r.dataset.ok = lastResult && lastResult.ok !== null ? String(lastResult.ok) : "";
+    const live = Object.values(conn).filter((c) => c.status === "live");
+    $("control-security").textContent = live.length
+      ? `${live.filter((c) => c.tls).length} of ${live.length} live connections use TLS.` : "";
+  }
+
+  let renderTimer = null;
+  function schedule() { if (!renderTimer) renderTimer = setTimeout(render, 150); }
+
+  // -- start -----------------------------------------------------------------------
+
+  document.addEventListener("click", (ev) => {
+    const t = ev.target;
+    if (t.dataset.forget) {
+      delete S.members[t.dataset.forget];
+      save();
+      render();
+    } else if (t.dataset.remove) {
+      removeEndpoint(t.dataset.remove);
+    } else if (t.dataset.act) {
+      const { act, target } = t.dataset;
+      if (isArmed(act, target)) {
+        armed = null;
+        const text = `${act === "poweroff" ? "power off" : "restart"} ${target}`;
+        control({ action: act, member: target }, text, (S.members[target] || {}).node)
+          .catch((e) => showResult(false, `${text}: ${e.message}`));
+      } else {
+        armed = { act, target, until: now() + ARM_MS };
+      }
+      render();
+    } else if (t.dataset.move) {
+      const name = t.dataset.move;
+      const to = moveTo[name];
+      const text = `move ${name} to ${to}`;
+      if (to) control({ action: "migrate", service: name, to }, text, null).catch((e) => showResult(false, `${text}: ${e.message}`));
+    }
+  });
+
+  document.addEventListener("change", (ev) => {
+    if (ev.target.dataset.moveSelect) moveTo[ev.target.dataset.moveSelect] = ev.target.value;
+  });
+
+  $("pair-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const input = $("pair-code");
+    pair(input.value).catch((e) => showResult(false, `pairing: ${e.message}`));
+    input.value = "";
+  });
+
+  $("add-endpoint").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const input = $("endpoint-input");
+    if (addEndpoint(input.value, "user")) input.value = "";
+    render();
+  });
+
+  function fromLocation() {
+    if (/^https?:$/.test(location.protocol) && location.host)
+      addEndpoint(location.protocol === "https:" ? `https://${location.host}` : location.host, "origin");
+    const m = location.hash.match(/endpoints=([^&]*)/);
+    if (m) decodeURIComponent(m[1]).split(",").forEach((e) => e.trim() && addEndpoint(e, "url"));
+  }
+
+  window.addEventListener("hashchange", fromLocation);
+  Object.keys(S.endpoints).forEach((k) => { if (!conn[k]) connect(k); });
+  fromLocation();
+  if (CAN_CONTROL) loadKey();
+  render();
+  setInterval(render, 1000);
+})();
+</script>
+</body>
+</html>

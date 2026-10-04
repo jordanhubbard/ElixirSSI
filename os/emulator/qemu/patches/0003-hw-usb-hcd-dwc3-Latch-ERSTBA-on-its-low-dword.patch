@@ -1,0 +1,61 @@
+hw/usb/hcd-dwc3: Latch ERSTBA on its low dword
+
+The xHCI specification has software write a 64-bit register low dword
+first, and QEMU's xHCI starts the event ring when ERSTBA's high dword
+is written. Synopsys's DWC3 latches it on the low dword instead, and
+Linux writes it high dword first for DWC3 hosts (XHCI_WRITE_64_HI_LO,
+set by drivers/usb/dwc3/host.c): QEMU then reads the segment table from
+the old low dword, the first event fails its ERDP bounds check and the
+controller halts with HCE, so no device ever enumerates. Let an xHCI
+latch ERSTBA on either dword, and have DWC3 use the low one.
+
+--- a/hw/usb/hcd-xhci.h
++++ b/hw/usb/hcd-xhci.h
+@@ -223,6 +223,12 @@
+     XHCIRing cmd_ring;
+ 
+     bool nec_quirks;
++    /*
++     * The event ring segment table base latches when its low dword is
++     * written, not its high one: DesignWare controllers, which Linux
++     * writes high dword first (XHCI_WRITE_64_HI_LO)
++     */
++    bool erstba_hi_lo;
+ } XHCIState;
+ 
+ extern const VMStateDescription vmstate_xhci;
+--- a/hw/usb/hcd-xhci.c
++++ b/hw/usb/hcd-xhci.c
+@@ -3129,10 +3129,15 @@
+         } else {
+             intr->erstba_low = val & 0xffffffc0;
+         }
++        if (xhci->erstba_hi_lo) {
++            xhci_er_reset(xhci, v);
++        }
+         break;
+     case 0x14: /* ERSTBA high */
+         intr->erstba_high = val;
+-        xhci_er_reset(xhci, v);
++        if (!xhci->erstba_hi_lo) {
++            xhci_er_reset(xhci, v);
++        }
+         break;
+     case 0x18: /* ERDP low */
+         if (val & ERDP_EHB) {
+--- a/hw/usb/hcd-dwc3.c
++++ b/hw/usb/hcd-dwc3.c
+@@ -603,6 +603,13 @@
+     SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
+     Error *err = NULL;
+ 
++    /*
++     * Synopsys's xHC latches the event ring segment table base on its low
++     * dword: Linux writes it high dword first for DWC3 hosts
++     * (XHCI_WRITE_64_HI_LO), and the high write alone must not start the
++     * event ring from a half-written address.
++     */
++    s->sysbus_xhci.xhci.erstba_hi_lo = true;
+     sysbus_realize(SYS_BUS_DEVICE(&s->sysbus_xhci), &err);
+     if (err) {
+         error_propagate(errp, err);

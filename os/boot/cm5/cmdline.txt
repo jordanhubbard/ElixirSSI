@@ -1,0 +1,1 @@
+console=tty1 console=serial0,115200 panic=5 quiet loglevel=4

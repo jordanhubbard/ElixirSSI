@@ -1,0 +1,41 @@
+hw/misc: Build the RP1 south bridge
+
+RP1 (hw/misc/rp1.c) needs the Cadence GEM, the PL011 and DWC3; the raspi5b and
+raspi-cm5 machines put it on PCIe2.
+
+--- a/hw/misc/Kconfig
++++ b/hw/misc/Kconfig
+@@ -265,6 +265,13 @@
+ config BCM2711_RNG200
+     bool
+ 
++config RP1
++    bool
++    depends on PCI_EXPRESS
++    select CADENCE
++    select PL011
++    select USB_DWC3
++
+ config BCM2712_PROPERTY
+     bool
+     select BCM2711_AVS_MONITOR
+--- a/hw/misc/meson.build
++++ b/hw/misc/meson.build
+@@ -89,6 +89,7 @@
+ system_ss.add(when: 'CONFIG_BCM2711_AVS_MONITOR', if_true: files('bcm2711_avs_monitor.c'))
+ system_ss.add(when: 'CONFIG_BCM2711_RNG200', if_true: files('bcm2711_rng200.c'))
+ system_ss.add(when: 'CONFIG_BCM2712_PROPERTY', if_true: files('bcm2712_property.c'))
++system_ss.add(when: 'CONFIG_RP1', if_true: files('rp1.c'))
+ system_ss.add(when: 'CONFIG_BCM2835_CPRMAN', if_true: files('bcm2835_cprman.c'))
+ system_ss.add(when: 'CONFIG_BCM2835_MBOX', if_true: files('bcm2835_mbox.c'))
+ system_ss.add(when: 'CONFIG_BCM2835_MPHI', if_true: files('bcm2835_mphi.c'))
+--- a/hw/arm/Kconfig
++++ b/hw/arm/Kconfig
+@@ -392,6 +392,7 @@
+     select BCM2712
+     select DDC
+     select LED
++    select RP1
+ 
+ config BCM2712
+     bool
