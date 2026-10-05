@@ -46,6 +46,7 @@ defmodule SSI.Shell do
   def help do
     IO.puts("""
     Cluster      nodes  cluster  uptime  free  df  services  dmesg(host \\\\ local)
+                 roster  cluster_forget(host)  (retired members out of the quorum count)
     Processes    ps(name: "x", node: host)  top(n)  kill(pid)  pinfo(pid)
     Placement    run(fun)  on(host, fun)  pmap(enum, fun)  spawn_anywhere(fun)
     Files        ls(p)  cd(p)  pwd  cat(p)  write(p, data)  append(p, data)
@@ -156,6 +157,40 @@ defmodule SSI.Shell do
   end
 
   def migrate(name, host), do: SSI.Service.move(name, host)
+
+  @doc "Every member the cluster has had, and whether this group holds quorum (runs services)."
+  def roster do
+    q = SSI.Cluster.Roster.quorum()
+
+    rows =
+      for e <- SSI.Cluster.Roster.all() do
+        here = if e.id in q.present, do: "present", else: "absent"
+        [e.id, to_string(e.node), here, if(e.id == q.tie_breaker, do: "tie-breaker", else: "")]
+      end
+
+    IO.write(Format.table(~w(MEMBER NODE STATE NOTE), rows))
+
+    IO.puts(
+      cond do
+        q.policy == "available" -> "Quorum not required (services.partition, #{length(q.roster)} members): every group runs services"
+        q.quorum -> "Quorum: #{length(q.present)} of #{length(q.roster)} present; services run here"
+        true -> "No quorum: #{length(q.present)} of #{length(q.roster)} present; services are stopped in this group"
+      end
+    )
+
+    @quiet
+  end
+
+  @doc "Remove a retired member from the roster (it must be down)."
+  def cluster_forget(host) do
+    case SSI.Cluster.Roster.forget(to_string(host)) do
+      {:ok, []} -> IO.puts("no member #{host} in the roster")
+      {:ok, ids} -> IO.puts("forgot #{Enum.join(ids, ", ")}")
+      {:error, why} -> IO.puts("cluster_forget: #{why}")
+    end
+
+    @quiet
+  end
 
   def register_service(name, module, args \\ %{}), do: SSI.Service.register(name, module, args)
 

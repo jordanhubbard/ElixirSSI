@@ -51,6 +51,17 @@
   serves the endpoint over TLS (`web.tls_port`, default 443) with a
   certificate from a web CA derived from the cluster secret (`/ca.pem`,
   fingerprint shown by `monitor_ca`).
+- ElixirSSI: a network partition no longer splits the system in two. The
+  cluster remembers every member it has had (`roster`), and only a group
+  holding more than half of them (or exactly half including the lowest host
+  name) runs services; the other group stops its instances and says why in
+  the timeline, while its shell, files and status endpoint keep working. The
+  monitor names the group holding quorum and marks the fenced one.
+  Quorum applies from three remembered members on (`services.partition`,
+  default `auto`), so two-member clusters fail over as before;
+  `cluster_forget` retires a member for good. Stops a
+  service manager makes itself (hand-offs, fencing) now appear in the
+  timeline.
 
 - Initialized the project with Literate AI's specification-led lifecycle and durable
   user-directed work queue.

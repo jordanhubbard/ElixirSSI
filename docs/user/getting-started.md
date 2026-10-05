@@ -148,11 +148,27 @@ import it as a certificate authority. Then give endpoints as
 certificate names its host name, its addresses, and `localhost`, so an SSH
 tunnel or port forward verifies too.
 
+### When the network splits
+
+Services run only in a group of members that holds *quorum*: more than half
+of every member the cluster has had, or exactly half including the lowest
+host name. So when a switch fails, one side keeps the services and the other
+stops them; both keep their shells, files and status endpoint, and the
+monitor shows the split with the fenced group marked. `roster` in a shell
+lists the members the cluster remembers and whether this group has quorum.
+
+A member you retire for good still counts as absent. Once it is off, remove
+it with `cluster_forget("ssi-1a2b3c")`, or a cluster that has lost half its
+members will wait for them. Quorum applies from three members on: two
+cannot tell a partition from a failure, so a two-member cluster keeps
+failing services over as before (`services.partition` changes this).
+
 Under QEMU, node *I*'s endpoint is forwarded to `localhost:808I` and its TLS
 endpoint to `localhost:844I`; on emulated CM5 boards to `localhost:818I` and
 `localhost:848I`. `make test-monitor` runs the monitor in a
 headless browser against four emulated CM5s through a power pull, a clean
-restart, a partition and its heal, and the whole cluster going down and
+restart, a partition into equal halves (one keeps quorum and the service,
+the other is fenced) and its heal, and the whole cluster going down and
 coming back, then pairs a second browser over TLS and uses every control
 (`BOARD=virt` uses KVM nodes and takes minutes, not a quarter of an hour).
 
@@ -232,6 +248,7 @@ does not replace a run on real CM5s.
 | `cluster_if` | first configured | Interface carrying cluster traffic |
 | `peers` | none | Unicast discovery seeds |
 | `replicas` | `2` | Copies of each file block |
+| `services.partition` | `auto` | `quorum`: under a partition only the group with more than half of the members the cluster has had (or half including the lowest host name) runs services. `available`: every group runs them. `auto`: `quorum` from three members on |
 | `desktop`, `desktop.size` | off, `1280x800` | RemoteOS-SDL endpoint for the desktop |
 | `ssh.port`, `ssh.password` | `22`, off | SSH server; keys from `/boot/authorized_keys` |
 | `web.port` | `80` | Status endpoint for the monitor (`0` disables it) |

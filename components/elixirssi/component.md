@@ -85,6 +85,13 @@ secret MUST be announced on every console and SSH login.
   one membership view.
 - Membership is every connected node. A node that stops responding is
   removed after the distribution tick timeout (8 s).
+- The *roster* is every member the cluster has had, kept in the replicated
+  state by member id (the host name; the node name in hosted mode) with the
+  node name it last used. Every member keeps its own entry current. A member
+  leaves the roster only by operator command (`cluster_forget`), and only
+  while it is down.
+- A group of connected members holds *quorum* when it has more than half of
+  the roster, or exactly half including the roster's lowest member id.
 - The aggregate machine (`SSI.Cluster.summary/0`) reports the sum of members'
   cores, schedulers and memory.
 
@@ -134,6 +141,17 @@ secret MUST be announced on every console and SSH login.
   checkpointed.
 - A freshly booted node waits a settle period before claiming services, so a
   rejoining node does not briefly run duplicates.
+- Services run only in a group holding quorum, so a partition leaves them
+  running on one side. A group without quorum MUST stop its instances and
+  journal why; services have no owner there. The replicated state, files,
+  shell and status endpoint stay available in every group. Fencing is not a
+  lease: the two sides detect the partition independently, so instances may
+  overlap for at most the difference between their detection times.
+- `services.partition` selects the policy: `quorum`; `available` (every
+  group runs services, as before quorum existed); or `auto`, the default:
+  `quorum` once the roster has three members, `available` before, since two
+  members cannot tell a partition from a failure and would lose every
+  service with the tie-breaking member.
 
 ## Shell and remote access
 
@@ -209,3 +227,4 @@ controls the system from outside it; both are specified in
 | Emulated RP1 at register level: identity, BARs, MSI-X edge and IACK semantics, atomic aliases, GPIO and its interrupts, PLL lock | `make test-emulator` |
 | Three emulated CM5s boot the flashable image from eMMC, show CM5 hardware to Linux, and pass the cluster suite, including USB keyboard input to tty1 and the console on RP1 UART0 | `make test-cm5` |
 | A store log left torn or zero-filled by a power cut still boots and keeps appending readably | `make test` (`store_log_test.exs`) |
+| Roster enrolment, majority and tie-break, fencing and recovery of a service, `cluster_forget`, `services.partition = available` | `make test` (`quorum_test.exs`, real peer BEAMs) |

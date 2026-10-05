@@ -390,7 +390,11 @@
       g.observers.push(v.observer);
       g.views.push(v);
     });
-    const groupList = Object.values(groups).sort((a, b) => b.members.length - a.members.length);
+    // A group's quorum (SSI.Cluster.Roster) decides whether it runs services;
+    // the group holding it comes first.
+    Object.values(groups).forEach((g) => { g.quorum = g.views[0].snap.system.quorum || null; });
+    const held = (g) => (g.quorum ? (g.quorum.quorum ? 1 : 0) : 0.5);
+    const groupList = Object.values(groups).sort((a, b) => held(b) - held(a) || b.members.length - a.members.length);
     if (groupList.length > 1) disagreeSince ??= t; else disagreeSince = null;
     const split = groupList.length > 1 && t - disagreeSince > SPLIT_MS;
 
@@ -398,7 +402,8 @@
     const joining = new Set(Object.values(byObserver).filter((v) => v.joining).map((v) => v.observer));
     const missing = Object.values(S.members).filter((m) => !up.has(m.node)).map((m) => m.hostname).sort();
 
-    // Services: each group runs its own copy during a split.
+    // Services: during a split only a group with quorum runs them (or every
+    // group, under services.partition = available).
     const services = {};
     for (const v of views) {
       for (const s of v.snap.services) {
@@ -430,13 +435,16 @@
       state = "split";
       reasons.push(`Members have disagreed about the membership since ${clock(disagreeSince)}`);
       groupList.forEach((g, i) => reasons.push(
-        `group ${i + 1}: ${g.observers.map(nameOf).join(", ")} see {${g.members.map(nameOf).join(", ")}}`));
+        `group ${i + 1}: ${g.observers.map(nameOf).join(", ")} see {${g.members.map(nameOf).join(", ")}}` + quorumText(g.quorum)));
     } else if (missing.length || down.length) {
       state = "degraded";
       missing.forEach((h) => {
         const m = S.members[h];
         reasons.push(`${h} is missing; last seen ${clock(m.lastSeen)}`);
       });
+      const q = groupList[0] && groupList[0].quorum;
+      if (q && !q.quorum) reasons.push(`no quorum: ${q.present.length} of ${q.roster.length} members present, so services are stopped` +
+        ` until a majority returns (an operator retires a member for good with cluster_forget)`);
       down.forEach((s) => reasons.push(`service ${s} is not running`));
     } else {
       state = "healthy";
@@ -449,6 +457,13 @@
       save();
     }
     return { state, reasons, views, groupList, split, up, joining, missing, services, memberGroup };
+  }
+
+  function quorumText(q) {
+    if (!q) return "";
+    const n = `${q.present.length} of ${q.roster.length}`;
+    if (q.policy === "available") return ` — runs services (quorum not required; ${n})`;
+    return q.quorum ? ` — holds quorum (${n}): runs services` : ` — no quorum (${n}): services stopped`;
   }
 
   // -- rendering -------------------------------------------------------------------
@@ -511,6 +526,7 @@
         if (d.how === "migrated") return `service ${s} moved from ${esc(d.from)} to ${esc(e.origin)}`;
         return `service ${s} ${esc(d.how || "started")} on ${esc(e.origin)}`;
       case "service_stopped": return `service ${s} stopped on ${esc(e.origin)}: ${esc(d.reason)}`;
+      case "quorum": return `${s} ${d.held ? "has quorum" : "lost quorum"} (${d.present} of ${d.roster} members present); services ${d.held ? "run" : "stopped"} in its group`;
       case "verdict": return `cluster ${s}${d.reason ? ": " + esc(d.reason) : ""}`;
       case "endpoint": return `endpoint ${s}: ${esc(d.label || d.status)}`;
       case "control": {
@@ -590,6 +606,8 @@
     $("system-body").innerHTML =
       `<div class="facts">` +
       fact("members", `${d.up.size} / ${known}`, "members up / known") +
+      (live && sys.quorum ? fact("quorum", `${sys.quorum.present.length} / ${sys.quorum.roster.length}`,
+        sys.quorum.policy === "available" ? "quorum not required" : sys.quorum.quorum ? "quorum held" : "no quorum") : "") +
       fact("cores", sys.cores, live ? "cores" : "cores (last known)") +
       fact("schedulers", sys.schedulers, "schedulers") +
       fact("memory", bytes(sys.memory), "memory") +
@@ -606,7 +624,9 @@
       const m = S.members[h];
       const state = d.joining.has(m.node) ? "joining" : d.up.has(m.node) ? "up" : "missing";
       const l = m.load || {};
-      const group = m.node in d.memberGroup ? `<span class="group-tag">group ${d.memberGroup[m.node] + 1}</span>` : "";
+      const g = m.node in d.memberGroup ? d.groupList[d.memberGroup[m.node]] : null;
+      const fenced = g && g.quorum ? (g.quorum.quorum ? "no" : "yes") : "";
+      const group = g ? `<span class="group-tag" data-fenced="${fenced}">group ${d.memberGroup[m.node] + 1}${fenced === "yes" ? " · fenced" : ""}</span>` : "";
       const pb = (m.previous_boot && m.previous_boot.ended) || "unknown";
       const rows = [
         ["model", m.model],

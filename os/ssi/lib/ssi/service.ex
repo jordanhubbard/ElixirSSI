@@ -27,8 +27,10 @@ defmodule SSI.Service do
       SSI.Service.call(:counter, :inc)
       SSI.Service.move(:counter, :"ssi@169.254.4.7")
 
-  Under a network partition each side runs its own instance; when the
-  partition heals the managers converge back to one.
+  Under a network partition only the side holding quorum
+  (`SSI.Cluster.Roster`) runs services: a group that loses quorum stops its
+  instances and the other side starts them. Without quorum a service has no
+  owner.
   """
 
   @scope :ssi
@@ -90,10 +92,18 @@ defmodule SSI.Service do
     end
   end
 
-  @doc "The member that should run `name` under the current membership."
+  @doc "The member that should run `name` under the current membership (nil without quorum)."
   def owner(name, members \\ SSI.Cluster.members()) do
+    owner(name, members, SSI.Cluster.Roster.quorum?(members))
+  end
+
+  @doc false
+  def owner(name, members, quorum) do
     case spec(name) do
       nil ->
+        nil
+
+      _ when not quorum ->
         nil
 
       %{pinned: pinned} when pinned != nil ->
@@ -133,6 +143,7 @@ defmodule SSI.Service.Manager do
   def init(_) do
     SSI.Events.subscribe(:membership)
     SSI.Store.subscribe(:services)
+    SSI.Store.subscribe(SSI.Cluster.Roster.table())
     settle = Application.get_env(:ssi, :service_settle_ms, if(SSI.Sys.target?(), do: @settle_ms, else: 0))
     Process.send_after(self(), :settled, settle)
     {:ok, %{running: %{}, starting: MapSet.new(), settled: false}}
@@ -157,7 +168,7 @@ defmodule SSI.Service.Manager do
   end
 
   def handle_info({:ssi_membership, _, _}, state), do: {:noreply, reconcile(state)}
-  def handle_info({:ssi_store, :services, _, _}, state), do: {:noreply, reconcile(state)}
+  def handle_info({:ssi_store, table, _, _}, state) when table in [:services, :roster], do: {:noreply, reconcile(state)}
 
   def handle_info({:started, name, {:ok, pid}}, state) do
     Process.monitor(pid)
@@ -192,17 +203,30 @@ defmodule SSI.Service.Manager do
   def handle_info(_, state), do: {:noreply, state}
 
   defp reconcile(state) do
+    SSI.Cluster.Roster.enroll()
     members = SSI.Cluster.members()
     specs = Map.new(SSI.Store.all(:services))
+    quorum = SSI.Cluster.Roster.quorum?(members)
+
+    if quorum != Map.get(state, :quorum, true) do
+      if quorum,
+        do: Logger.warning("service: quorum regained on #{SSI.Boot.hostname()}; running services"),
+        else: Logger.warning("service: quorum lost on #{SSI.Boot.hostname()}; stopping services")
+
+      SSI.Status.Journal.quorum(quorum)
+    end
 
     # Stop what we run but no longer own (or that was unregistered).
     running =
       Enum.reduce(state.running, state.running, fn {name, pid}, acc ->
-        if Map.has_key?(specs, name) and SSI.Service.owner(name, members) == node() do
+        if Map.has_key?(specs, name) and SSI.Service.owner(name, members, quorum) == node() do
           acc
         else
-          Logger.info("service: #{inspect(name)} handing off from #{SSI.Boot.hostname()}")
-          stop(pid)
+          why = if(quorum, do: :moved, else: :no_quorum)
+          Logger.info("service: #{inspect(name)} #{if quorum, do: "handing off", else: "stopping"} on #{SSI.Boot.hostname()}")
+          # Recorded here: the instance leaves `running` before its exit arrives.
+          SSI.Status.Journal.service_stopped(name, {:shutdown, why})
+          stop(pid, why)
           Map.delete(acc, name)
         end
       end)
@@ -211,7 +235,7 @@ defmodule SSI.Service.Manager do
     # instance is alive, so a migrating service restores its final checkpoint.
     starting =
       Enum.reduce(specs, state.starting, fn {name, spec}, acc ->
-        if SSI.Service.owner(name, members) == node() and not Map.has_key?(running, name) and
+        if SSI.Service.owner(name, members, quorum) == node() and not Map.has_key?(running, name) and
              not MapSet.member?(acc, name) do
           start_async(name, spec)
           MapSet.put(acc, name)
@@ -220,13 +244,13 @@ defmodule SSI.Service.Manager do
         end
       end)
 
-    %{state | running: running, starting: starting}
+    %{state | running: running, starting: starting} |> Map.put(:quorum, quorum)
   end
 
-  defp stop(pid) do
+  defp stop(pid, why) do
     Task.start(fn ->
       try do
-        GenServer.stop(pid, {:shutdown, :moved}, 15_000)
+        GenServer.stop(pid, {:shutdown, why}, 15_000)
       catch
         :exit, _ -> Process.exit(pid, :kill)
       end

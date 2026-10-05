@@ -4,6 +4,8 @@ defmodule SSI.TestCluster do
   @moduledoc "Boots extra BEAM nodes running the full SSI application (hosted mode)."
 
   def start_peers(names) do
+    # Members stopped by earlier tests would count against quorum.
+    forget_absent()
     # Peers must present the cluster-derived cookie the SSI application uses.
     cookie = [~c"-setcookie", Atom.to_charlist(SSI.Cluster.Identity.cookie())]
     paths = cookie ++ Enum.flat_map(:code.get_path(), &[~c"-pa", &1])
@@ -30,6 +32,21 @@ defmodule SSI.TestCluster do
         :exit, _ -> :already_stopped
       end
     end
+
+    forget_absent()
+  end
+
+  @doc """
+  Drop members that are gone from the roster, so peers stopped by earlier
+  tests (or earlier runs: the hosted store persists) do not count against
+  quorum in later ones.
+  """
+  def forget_absent do
+    eventually(fn ->
+      members = SSI.Cluster.members()
+      for e <- SSI.Cluster.Roster.all(), e.node not in members, do: SSI.Cluster.Roster.forget(e.id)
+      SSI.Cluster.Roster.quorum().absent == []
+    end)
   end
 
   @doc "Poll `fun` until it returns truthy or `ms` elapses."
@@ -53,3 +70,5 @@ defmodule SSI.TestCluster do
     end
   end
 end
+
+SSI.TestCluster.forget_absent()

@@ -146,6 +146,45 @@ stopped, so it restores the final checkpoint. A freshly booted node waits a
 settle period before claiming services, so a rejoining Pi does not briefly
 run duplicates.
 
+### Services under partition: quorum
+
+Membership is the connected set, so after a network split each group sees a
+smaller but internally consistent cluster and, by the rule above, would run
+every service: the one system becomes two, each acting on the world (driving
+the desktop, writing checkpoints) as if alone. Only a group that knows how
+big the cluster *should* be can tell it is the minority. That is the
+*roster* (`SSI.Cluster.Roster`): every member the cluster has had, kept in
+the replicated store, keyed by host name because node names follow
+addresses that DHCP may change.
+
+A group holds quorum with more than half of the roster, or exactly half
+including the roster's lowest host name, so of two equal halves exactly one
+continues. Without quorum, a service has no owner and every manager in the
+group stops its instances, journalling `quorum lost`; when the partition
+heals, or an operator forgets a retired member (`cluster_forget`), quorum
+returns and the services start again from their checkpoints. Only services
+are fenced: the store is a CRDT and the shell, files and status endpoint
+keep working in every group, which is what makes the fenced half
+diagnosable from the monitor.
+
+```mermaid
+flowchart LR
+    Split["partition"] --> A["group A: 2 of 4, holds the lowest host name"]
+    Split --> B["group B: 2 of 4"]
+    A -->|quorum| RunA["runs every service"]
+    B -->|no quorum| StopB["stops its instances; store, shell, monitor stay up"]
+```
+
+This is fencing by self-knowledge, not a lease. Each side detects the split
+on its own distribution tick, so an instance on the losing side may outlive
+the winner's new instance by the difference between the two detections
+(bounded by the 8 s tick timeout, usually far less). A two-member cluster
+gains nothing from quorum: it cannot tell a partition from a failure, so
+quorum would only turn the tie-breaking member's failure into the loss of
+every service. The default policy, `services.partition = auto`, therefore
+requires quorum from three remembered members on; `quorum` and `available`
+(each group runs its own instances, the earlier behaviour) force either.
+
 ## Consoles
 
 The serial console is the BEAM's own terminal. A second shell runs on the
@@ -216,8 +255,8 @@ Connecting to every member at once is what makes degraded states visible:
 | What the browser observes | Verdict |
 | --- | --- |
 | Every remembered member is in the answering members' memberships and every service runs | Healthy |
-| A remembered member is in no answering member's membership, or a service is not running | Degraded |
-| Two answering members report different memberships for more than 10 s | Split (no single member can report its own partition reliably) |
+| A remembered member is in no answering member's membership, a service is not running, or the answering members lack quorum | Degraded |
+| Two answering members report different memberships for more than 10 s | Split (no single member can report its own partition reliably), naming the group that holds quorum and the fenced one |
 | Nothing answers | Down, with the last known state and when each member was last heard |
 
 What a browser cannot tell apart is listed in the monitor rather than
@@ -295,8 +334,12 @@ CM5, leave the debug UART either disconnected or read.
 
 - The cluster filesystem writes whole files (last writer wins); it is not a
   POSIX block device, and there is no byte-range locking.
-- Under a partition each side keeps running its own instance of a service;
-  managers converge back to one instance when the partition heals.
+- Under a partition only the group holding quorum runs services, but
+  fencing is not a lease: instances on both sides may overlap for the
+  difference between the two sides' failure detections. A member retired for
+  good counts against quorum until it is forgotten (`cluster_forget`), and a
+  member without a persistent store that boots cut off from the rest knows
+  only itself.
 - Anyone holding the cluster secret is a full member; there is no per-user
   or per-node revocation short of changing the secret on every node.
   Monitor keys are revocable individually, but a paired browser has every

@@ -46,7 +46,8 @@ members, or all of them, are gone.
 - A snapshot is built from the member's own memory, without calls to other
   members. It holds the observer (node, hostname, boot id); the system as one
   machine (members, cores, schedulers, memory, mean scheduler utilisation,
-  processes); each member (hardware, addresses and web port, uptime, latest
+  processes, and the observer's group's quorum: policy, roster, present and
+  absent member ids, tie-breaker, held or not); each member (hardware, addresses and web port, uptime, latest
   load sample and utilisation history, the services it runs, and how its
   previous boot ended); every registered service with where it runs, where it
   should run, and whether it is running; and the member's recent journal.
@@ -55,7 +56,8 @@ members, or all of them, are gone.
   events every member originates: a service starting (and, when it replaced
   an instance on a member that is no longer a member, the time since that
   member was last heard from), a service stopping, and a member booting with
-  its previous-boot record. Event ids are unique across the cluster.
+  its previous-boot record, and a member's group gaining or losing quorum.
+  Event ids are unique across the cluster.
 - A member with a persistent data partition records each boot there and
   refreshes it every 30 seconds while running. Restart and power-off mark the
   record as ended cleanly with the requested action before reboot(2). At the
@@ -82,9 +84,12 @@ members, or all of them, are gone.
   - **Down** — no endpoint answers; since when, and how each fails;
   - **Split** — two answering members have reported different memberships for
     more than 10 seconds, not counting a member that booted less than a
-    minute ago and sees only itself (it is joining); the groups;
+    minute ago and sees only itself (it is joining); the groups, each with
+    whether it holds quorum (runs services) or is fenced; the group holding
+    quorum is listed first and member cards name their group;
   - **Degraded** — a remembered member is in no answering member's
-    membership, or a registered service is not running; which and since when;
+    membership, a registered service is not running, or the answering
+    members lack quorum; which and since when;
   - **Healthy** — otherwise.
 - It shows the system view (the aggregate machine, utilisation history, the
   services and where they run), the member view (one card per remembered
@@ -165,7 +170,7 @@ it. Changing it takes a key the cluster has been told to trust.
 | Scenario | Evidence |
 | --- | --- |
 | Status snapshot, journal, previous-boot record, HTTP and WebSocket endpoint | `make test` (`status_test.exs`, `web_test.exs`) |
-| The monitor, in a browser, across four emulated CM5s: healthy; a power pull (degraded, failover time, unclean previous boot); a partition (split) and its heal; the whole cluster down (last known state kept across a reload); recovery | `make test-monitor` |
+| The monitor, in a browser, across four emulated CM5s: healthy; a power pull (degraded, failover time, unclean previous boot); a partition into equal halves (split, one copy of a service on the half holding quorum, the other shown fenced) and its heal; the whole cluster down (last known state kept across a reload); recovery | `make test-monitor` |
 | The same monitor scenarios on four `virt` nodes | `make test-monitor BOARD=virt` |
 | Pairing, signed controls (refusal of unsigned, forged, replayed and revoked requests), web CA and certificates over TLS | `make test` (`control_test.exs`) |
 | Monitor controls in a browser over TLS on four emulated CM5s: an unpaired request refused, pairing, move a service, restart and power off a member, revocation | `make test-monitor` |

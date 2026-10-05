@@ -35,7 +35,10 @@ defmodule SSI.Status do
         memory: sum(infos, :memory),
         util: mean(Enum.map(samples, & &1.util)),
         processes: samples |> Enum.map(& &1.processes) |> Enum.sum(),
-        insecure_secret: SSI.Config.insecure_secret?()
+        insecure_secret: SSI.Config.insecure_secret?(),
+        # Whether this observer's group runs services, out of every member
+        # the cluster has had (`SSI.Cluster.Roster`).
+        quorum: SSI.Cluster.Roster.quorum(members)
       },
       members: Enum.map(members, &member(&1, infos[&1], loads[&1], hosted[&1] || [])),
       services: Enum.map(services, &service(&1, infos)),

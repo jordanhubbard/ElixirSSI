@@ -23,6 +23,7 @@ defmodule SSI.Config do
     "cluster_if" => nil,
     "peers" => "",
     "replicas" => "2",
+    "services.partition" => "auto",
     "desktop" => nil,
     "desktop.size" => "1280x800",
     "ssh.port" => "22",

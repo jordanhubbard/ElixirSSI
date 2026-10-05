@@ -9,8 +9,9 @@ monitor exists to explain, checking what the page renders at each step:
 
   healthy -> a board's power pulled (degraded, failover with its downtime)
   -> the board back (healthy, previous boot unclean) -> a clean restart
-  (previous boot clean) -> a partition (split, a service on both sides)
-  -> the partition healed (healthy, one copy) -> every board off (down,
+  (previous boot clean) -> a partition into equal halves (split; only the
+  half holding the roster's tie-breaker keeps quorum and runs the service,
+  the other is fenced) -> the partition healed (healthy, one copy) -> every board off (down,
   last known state, kept across a reload) -> every board on (healthy
   again, without a reload).
 
@@ -459,11 +460,31 @@ def main():
         reasons = browser.eval(text("#reasons"))
         check("a partition is shown as a split with both groups", ok and "group 2" in reasons,
               f"{time.time() - t_split:.1f}s; " + reasons.replace("\n", "; "))
-        ok = browser.wait('(document.querySelector(\'[data-service="counter"]\') || {dataset: {}}).dataset.node.split(" ").length === 2', 60)
-        check("each side runs its own copy of the service", ok,
-              browser.eval("(document.querySelector('[data-service=\"counter\"]') || {dataset: {}}).dataset.node"))
-        held = not browser.wait("!(" + verdict("split") + ")", 20)
-        check("the split holds while the partition lasts", held, browser.eval(text("#reasons")).replace("\n", "; "))
+        # The larger group holds quorum; of equal halves (four members), the
+        # one with the lowest host name, the roster's tie-breaker. It runs the
+        # service; the other is fenced.
+        halves = [[hosts[i] for i in range(1, n - 1)], [hosts[i] for i in side]]
+        winner = max(halves, key=lambda h: (len(h), h is min(halves, key=min)))
+        loser = halves[1] if winner is halves[0] else halves[0]
+        where = "(document.querySelector('[data-service=\"counter\"]') || {dataset: {node: ''}}).dataset.node"
+        one_copy = f'{where} !== "" && {where}.split(" ").length === 1 && {json.dumps(winner)}.includes({where})'
+        fenced = " && ".join(f'(document.querySelector(\'[data-member="{h}"] [data-fenced]\') || {{dataset: {{}}}}).dataset.fenced === "{v}"'
+                             for h, v in [(h, "no") for h in winner] + [(h, "yes") for h in loser])
+        ok = browser.wait(one_copy + " && " + fenced, 60)
+        reasons = browser.eval(text("#reasons"))
+        check("only the half holding quorum runs the service; the other is shown fenced",
+              ok and f"holds quorum ({len(winner)} of {n})" in reasons and f"no quorum ({len(loser)} of {n})" in reasons,
+              f"{browser.eval(where)} in {'+'.join(winner)}; " + reasons.replace("\n", "; "))
+        # Sampled while the partition lasts: never a second copy, never none.
+        copies = set()
+        t_hold = time.time()
+        while time.time() - t_hold < 20:
+            copies.add(browser.eval(where) if browser.eval(verdict("split")) else "(not split)")
+            time.sleep(1)
+        check("the split holds with exactly one copy of the service, on the quorum side",
+              all(c in winner for c in copies), ", ".join(sorted(copies)))
+        ok = browser.wait(event("quorum", loser[0]), 10)
+        check("the timeline shows the fenced half losing quorum", ok)
         browser.call("shot", path=os.path.join(OUT, "3-split.png"))
 
         t_heal = time.time()

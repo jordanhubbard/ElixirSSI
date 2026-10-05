@@ -7,7 +7,8 @@ defmodule SSI.Status.Journal do
     * *observations* this member makes itself — another member joining or
       leaving — which stay local, since every member observes them;
     * *originated* events — a service starting or stopping here, this member
-      booting, a monitor request this member carried out — which are sent to every member as they happen, and again to
+      booting, a monitor request this member carried out, its group gaining or losing
+      quorum — which are sent to every member as they happen, and again to
       each member that joins, so any member's journal tells the cluster's
       story. Ids (`HOST-BOOT-SEQ`) are unique across the cluster, so copies
       merge.
@@ -41,6 +42,9 @@ defmodule SSI.Status.Journal do
 
   @doc "Record an authenticated monitor request about `subject` (`SSI.Web.Control`)."
   def control(subject, detail), do: GenServer.cast(__MODULE__, {:control, subject, detail})
+
+  @doc "Record that this member's group gained or lost quorum (`SSI.Cluster.Roster`)."
+  def quorum(held), do: GenServer.cast(__MODULE__, {:quorum, held})
 
   @doc "Events are published locally on this topic as `{:ssi_journal, event}`."
   def topic, do: :journal
@@ -95,6 +99,12 @@ defmodule SSI.Status.Journal do
 
   def handle_cast({:control, subject, detail}, state) do
     {:noreply, originate(state, "control", subject, detail)}
+  end
+
+  def handle_cast({:quorum, held}, state) do
+    q = SSI.Cluster.Roster.quorum()
+    detail = %{held: held, present: length(q.present), roster: length(q.roster)}
+    {:noreply, originate(state, "quorum", SSI.Boot.hostname(), detail)}
   end
 
   def handle_cast({:events, events}, state) do
@@ -202,6 +212,7 @@ defmodule SSI.Status.Journal do
   defp reason_text(:shutdown), do: "stopped"
   defp reason_text({:shutdown, :moved}), do: "handed off"
   defp reason_text({:shutdown, :poweroff}), do: "member shutting down"
+  defp reason_text({:shutdown, :no_quorum}), do: "quorum lost"
   defp reason_text({:shutdown, r}), do: inspect(r)
   defp reason_text(r), do: "crashed: " <> String.slice(inspect(r), 0, 200)
 end
