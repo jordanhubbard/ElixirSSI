@@ -33,5 +33,5 @@ RUN cd /src && echo "${ELIXIR_SHA256}  elixir-${ELIXIR_VERSION}.tar.gz" | sha256
  && cd / && rm -rf /src
 ENV PATH=/opt/elixir/bin:/opt/erlang/bin:$PATH MIX_HOME=/opt/mix HEX_OFFLINE=1
 # Image-assembly tools, kept in a late layer so adding one does not rebuild OTP.
-RUN apk add --no-cache zstd ncurses-terminfo
+RUN apk add --no-cache zstd ncurses-terminfo python3 dtc
 WORKDIR /work

@@ -26,8 +26,8 @@ endpoint is forwarded to 127.0.0.1:8180+I, its TLS endpoint to
 127.0.0.1:8480+I and SSH to 127.0.0.1:2320+I. The
 command line pins the cluster to eth0 (ssi.cluster_if=eth0).
 
-Board I keeps its eMMC in build/cm5emu/nodeI.img (a sparse copy made on
-first start), its console log in nodeI.log, a console socket nodeI.sock and
+Board I keeps its eMMC in build/cm5emu/nodeI-IMAGEHASH.img (a sparse copy made
+on first start of that image), its console log in nodeI.log, a console socket nodeI.sock and
 a QEMU monitor socket nodeI.mon (whose sendkey types on the board's USB
 keyboard). 'stop' kills the board's firmware process,
 and QEMU with it: a power pull, not a shutdown.
@@ -39,6 +39,7 @@ SSI_CM5_MEM (MiB, default 4096), SSI_CM5_APPEND (extra kernel arguments),
 SSI_CM5_QEMU_ARGS (extra QEMU options, e.g. tracing), SSI_EMULATOR (the
 QEMU binary, default build/emulator/current/...).
 """
+import hashlib
 import os
 import shutil
 import signal
@@ -48,7 +49,7 @@ import time
 
 OS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILD = os.path.join(OS, "build")
-DIR = os.path.join(BUILD, "cm5emu")
+DIR = os.environ.get("SSI_CM5_STATE_DIR", os.path.join(BUILD, "cm5emu"))
 IMAGE = os.path.join(BUILD, "cm5", "elixirssi-cm5.img")
 EMU = os.path.join(BUILD, "emulator", "current")
 QEMU = os.environ.get("SSI_EMULATOR", os.path.join(EMU, "build", "qemu-system-aarch64"))
@@ -63,8 +64,14 @@ def path(i, suffix):
 
 
 def card(i):
-    """Board i's eMMC: the flashable image, copied once (sparse)."""
-    img = path(i, ".img")
+    """Reuse state only for the same built image; preserve older cards."""
+    if not os.path.exists(IMAGE):
+        sys.exit(f"ssi-cm5: no {IMAGE}; run 'make build' first")
+    digest = hashlib.sha256()
+    with open(IMAGE, "rb") as source:
+        for chunk in iter(lambda: source.read(4 * 1024 * 1024), b""):
+            digest.update(chunk)
+    img = path(i, f"-{digest.hexdigest()[:16]}.img")
     if not os.path.exists(img):
         if not os.path.exists(IMAGE):
             sys.exit(f"ssi-cm5: no {IMAGE}; run 'make image-cm5' first")
@@ -75,13 +82,14 @@ def card(i):
 
 def command(i, console):
     host, port = SWITCH.rsplit(":", 1)
+    bind = os.environ.get("SSI_FORWARD_BIND", "127.0.0.1")
     qemu = ["-smp", "4", "-m", MEM,
             "-netdev", f"dgram,id=swa,remote.type=inet,remote.host={host},remote.port={port}",
             "-netdev", "hubport,id=pa,hubid=0,netdev=swa",
             "-netdev", "hubport,id=switch,hubid=0",
             "-global", "rp1.netdev=switch", "-global", f"rp1.mac=52:54:00:c5:00:{i:02x}",
             # The management port: a USB Ethernet adapter on user networking
-            "-netdev", f"user,id=mgmt,hostfwd=tcp:127.0.0.1:{8180 + i}-:80,hostfwd=tcp:127.0.0.1:{8480 + i}-:443,hostfwd=tcp:127.0.0.1:{2320 + i}-:22",
+            "-netdev", f"user,id=mgmt,hostfwd=tcp:{bind}:{8180 + i}-:80,hostfwd=tcp:{bind}:{8480 + i}-:443,hostfwd=tcp:{bind}:{2320 + i}-:22",
             "-device", f"usb-net,netdev=mgmt,mac=52:54:00:c5:01:{i:02x}",
             # A USB keyboard in one of the IO board's ports: typing reaches tty1
             "-device", "usb-kbd"]

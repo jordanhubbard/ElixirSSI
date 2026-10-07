@@ -368,10 +368,7 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     tc.qemu("stop")
     for i in range(1, n + 2):
-        for suffix in (".ext4", ".log", ".img"):
-            p = os.path.join(tc.CLUSTER, f"node{i}{suffix}")
-            if os.path.exists(p):
-                os.remove(p)
+        tc.reset_node(i)
 
     check = tc.check
     browser = Browser()

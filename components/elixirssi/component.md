@@ -29,6 +29,18 @@ substrate `os/substrate`, kernel fragment `os/kernel`, image tooling
 `os/scripts`). The design rationale is in
 [docs/architecture/elixirssi.md](../../docs/architecture/elixirssi.md).
 
+## Project verification
+
+The repository MUST provide `make verify-update` to build the CM5 image and run
+`make test`, `make test-emulator` and `make test-cm5`, publishing a project-owned
+passing receipt only when every command succeeds and source and authority remain
+unchanged. `make verify` MUST reject changed retained source, changed image
+artifacts, a changed verification runner, missing evidence and failed framework
+authority or resolution checks. A failed qualification MUST invalidate the previous
+receipt. Evidence MUST distinguish emulator qualification from physical CM5 tests.
+The receipt counts the four command stages and binds their logs and image hashes;
+it does not claim Standard generated-source lifecycle evidence.
+
 ## Substrate
 
 - The machine boots the Raspberry Pi Linux kernel (`rpi-6.18.y`,
@@ -186,10 +198,18 @@ controls the system from outside it; both are specified in
 
 ## Images
 
-- `make` produces the kernel and initramfs; `make image-cm5` produces an MBR
+- `make` and `make build` produce one flashable MBR
   image with a FAT32 boot partition (`config.txt`, `cmdline.txt`,
   `kernel_2712.img`, initramfs, BCM2712 device trees and overlays,
-  `ssi.conf`) and an ext4 data partition.
+  `ssi.conf`) and an ext4 data partition. The same image is used by emulation
+  and by physical CM5 boards (eMMC, or SD on CM5 Lite).
+- The repository root MUST expose `build`, `run`, `test`, and `clean`.
+  `run` builds and boots the image in the full CM5 emulator with a serial
+  console; the generic `virt` machine is an explicit `run-virt` shortcut.
+  `test` runs hosted unit/peer tests, build regressions and image checks;
+  `test-cm5` runs the slower full emulated-cluster acceptance suite.
+  `clean` removes assembled image and release outputs while preserving
+  download/compiler caches, emulator disks and the cluster secret.
 
 ## Emulated hardware
 

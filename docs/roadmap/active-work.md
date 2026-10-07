@@ -171,3 +171,51 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
   - [x] make test passes including quorum_test.exs — 49 passed (2026-10-04)
   - [x] make test-monitor (4 emulated CM5s, 2|2 split): the service runs on exactly one side throughout the partition; the monitor names the fenced side — 39/39 on the final build: split shown in 18.5 s, ssi-c50001+ssi-c50002 hold quorum (2 of 4, tie-breaker), the counter ran only on ssi-c50001 for the whole hold, ssi-c50003/4 shown fenced with "quorum lost" in the timeline (the fenced side stopped it 3 s before the quorum side started it), healed in 1.3 s with one copy (2026-10-04)
   - [x] make test-cluster and make test-monitor BOARD=virt still pass — 20/20 and 39/39; make test-cm5 29/29; make test-desktop (two nodes) 29/29 once services.partition = auto exempted two-member rosters — it failed 24/29 with quorum required, the survivor of a two-node failover lacking quorum (2026-10-04)
+
+### [x] SSI-009 — Build from macOS through Docker
+
+- **Priority:** P1
+- **Owner:** project core (os build tooling)
+- **Direction:** Make this checkout build on the Mac using Docker for Linux tools.
+- **Conclusion:** The default build invoked Apple Make 3.81 and a Linux cross compiler on macOS. The macOS path now builds the kernel on a case-sensitive Docker volume and assembles the initramfs inside Linux, retaining the native Linux path and pinned runtime. Module filenames also differ only by case (xt_RATEEST.ko and xt_rateest.ko): export them as modules.tar and unpack only inside Linux, with separate metadata for the hardware-image verifier. Snapshot the long-running kernel script before execution so edits cannot corrupt the running shell's input.
+- **Depends on:** SSI-001
+- **Implementation:**
+  - [x] Provide a Docker kernel build with persistent case-sensitive storage and exported build artifacts
+  - [x] Make source checksums and initramfs assembly portable and document the macOS build
+  - [x] Preserve case-distinct modules through archive transport and check their dependency closure in the generated initramfs
+- **Evidence:**
+  - [x] Default make produces the ARM64 kernel and initramfs from this macOS checkout — Apple Make 3.81, Docker ARM64, kernel 6.18.54-elixirssi+, 942 modules; kernel SHA-256 d7f5c3037442f7a0ee6144929f31e9634a0945d4e7ca924ca6e5185260c2123f, initramfs SHA-256 319299a4e234d0367af0f5a0d799fa3782430680e117a296fa0492cc43c10a7f (2026-10-05).
+  - [x] make test passes the Elixir unit and multi-node suite — 49 passed (2026-10-05).
+  - [x] Incremental build and kernel container failure propagation checks pass — plain make reports nothing to do; python3 os/scripts/test_build.py passes 4 checks covering failure exits, paths with spaces, cache reuse, distinct module contents and complete module dependencies (2026-10-05).
+  - [x] Build the CM5 image and pass its static layout and driver verification inside Docker — make image-cm5 succeeds; verify_cm5.py passes 21/21 for the CM5 and CM5 Lite (2026-10-05).
+- **Framework baseline:** Verification of the original committed tree already reports a stale hello-component lock and a missing project test receipt. This build repair does not claim those independent framework gates pass, or claim physical CM5 or QEMU boot evidence.
+
+### [x] SSI-010 — One image and standard build run test clean targets
+
+- **Priority:** P1
+- **Owner:** ElixirSSI component and build tooling
+- **Direction:** Expose build, run, test and clean at the repository root; build one flashable image and run it in the full CM5 emulator.
+- **Conclusion:** Default make currently omits the flashable image and run uses the generic virt machine. Make build the CM5 image, route run and cluster to CM5 emulation, preserve explicit virt targets, and provide Docker-hosted emulation on macOS. Preserve emulated data and cluster identity during clean.
+- **Depends on:** SSI-009
+- **Implementation:**
+  - [x] Update component contract, Make targets, emulator Docker transport and user guide
+  - [x] Test target dispatch, cleanup boundaries and image freshness
+  - [x] Isolate disposable acceptance cards from interactive state, clear stale container PID/socket files, and reuse the emulator tool image when its Dockerfile is unchanged
+- **Evidence:**
+  - [x] Local build target and transport regression checks pass — 8 target/transport/card/clean checks and 4 existing build checks passed (2026-10-07), including isolation of acceptance resets from interactive cards.
+  - [x] Docker build and full CM5 boot pass on macOS — plain make run boots the image's eMMC partitions to the Elixir shell; the guest reports Raspberry Pi Compute Module 5 Rev 1.0, and the monitor responds on localhost:8181. Ctrl-A X exits successfully. Subsequent make build reports nothing to do (2026-10-07).
+  - [x] Default test suite and static image checks pass — make build and make test: 49 Elixir tests, 12 build/target checks, and 21/21 image layout/driver checks (2026-10-07).
+  - [x] make test-emulator passes 10 RP1 device tests; make test-cm5 passes 29/29 on three emulated boards, including TLS membership, shared files, distributed work, service failover in 10.0 seconds, rejoin with persistent state, SSH, and RP1 USB keyboard input (2026-10-07).
+- **Qualification boundary:** Docker and tracker access were restored and the start/end peer surveys completed. The first public base-image pull used an isolated empty Docker credential configuration because this noninteractive session could not unlock the macOS keychain; subsequent plain make run/test-cm5 reuse the tool image without a registry lookup. Physical CM5 validation remains SSI-002. The independent pre-existing sample audit and missing framework receipt gates were still open at this checkpoint; SSI-011 resolves their project alignment.
+
+### [x] SSI-011 — Align project verification with the system image workflow
+
+- **Priority:** P1
+- **Owner:** ElixirSSI project configuration and verification
+- **Direction:** Align Literate AI metadata and verification with the actual Make and Docker build and emulator tests.
+- **Conclusion:** The inherited Python starter suite and sample audit do not describe the retained ElixirSSI implementation. Use the compact project-owned receipt contract for the real Make suite. Keep the Standard lifecycle only for the greeting example; generated-source provenance, security and admission claims do not apply to this retained implementation and are not asserted. Full adoption would quarantine and restructure the existing repository, so it is not used. The combined make verify gate adds retained source and image currency checks beyond standalone litai verify.
+- **Depends on:** none
+- **Implementation:**
+  - [x] Align project metadata and operator documentation; refresh resolution audits; bind an executable verification suite to current source and image evidence
+- **Evidence:**
+  - [x] Run the declared suite and demonstrate current verification passes and changed source or failed tests cannot reuse its receipt — make verify-update on macOS/Docker passed the image build, 49 Elixir tests, 12 build/target checks, 4 receipt failure/drift checks, 21 image checks, 10 RP1 tests and 29/29 three-board CM5 acceptance checks (failover 9.7 seconds). Current source/image fingerprints and all applicable litai verify gates pass; source-intelligence and HTML observability remain explicitly unconfigured. Evidence: verification/current.json and verification/system-image.json (2026-10-07).
