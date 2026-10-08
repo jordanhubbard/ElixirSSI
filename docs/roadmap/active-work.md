@@ -232,3 +232,20 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
 - **Evidence:**
   - [x] Install from packaged artifacts without compiling; three emulated CM5 nodes form a cluster, the offline browser renders Healthy then Down and retains all members after reload, the packaged RemoteOS client captures a 1280x800 desktop frame, the development runtime reports Elixir 1.20.4/OTP 29, and restart preserves cards. Evidence: release artifact gate and its installed-check.json; host qualification: Apple Silicon macOS/Docker.
   - [ ] Validate and publish exact release assets and checksums; physical Pi 5/CM5 boot remains unqualified under SSI-002.
+
+### [x] SSI-013 — Verify inter-node IPC and BEAM process distribution
+
+- **Priority:** P1
+- **Owner:** ElixirSSI cluster and scheduler
+- **Direction:** Verify networking, fault tolerance and load distribution at the Elixir lightweight-process level.
+- **Conclusion:** Trace native TLS BEAM distribution, task placement and service recovery; distinguish workload dispatch from automatic migration of arbitrary live processes and record fault-tolerance limits.
+- **Depends on:** none
+- **Implementation:**
+  - [x] Audit transport, load sampling, task scheduling, service ownership and checkpoint recovery
+- **Evidence:**
+  - [x] Verify existing multi-node and CM5 tests and retain findings with source references — make verify-update passed 49 Elixir tests (including pmap/node loss and service migration) and 29/29 three-board CM5 checks, with TLS transport, work on all three nodes and checkpointed service recovery in 9.2 seconds. Source fingerprints and log identities are retained in verification/system-image.json (2026-10-08).
+
+- **Audit findings:** Native distributed Erlang carries process messages, GenServer calls, task supervision, monitors and RPC over mutually verified TLS 1.3 on TCP 4370 (`cluster/distribution.ex`, `cluster/tls.ex`, `cluster/epmd.ex`). HMAC-authenticated UDP discovery beacons use port 45892 every two seconds (`cluster/discovery.ex`). QEMU provides Ethernet connectivity; it does not schedule SSI application work.
+- **Process placement:** `load.ex` samples BEAM scheduler wall time and run queues once per second; score = utilization + queue length / online schedulers. `sched.ex` places spawn/run on the lowest score and interleaves parallel tasks across members up to one in-flight item per scheduler by default. Tasks are lightweight BEAM processes under each node's Task.Supervisor. Membership is reread at dispatch; monitored failed items are retried up to three times.
+- **Service recovery:** `service.ex` places each named GenServer using rendezvous hashing or an explicit pin. On node loss a surviving owner starts a new process from application checkpoints; explicit move checkpoints/stops/starts the service. This is application-state recovery, not migration of a process heap, mailbox or instruction pointer. Service placement is not CPU-load-sensitive, and ordinary Kernel.spawn processes are not automatically distributed or recovered. The task coordinator is local to its caller and is not itself replicated.
+- **Fault-tolerance boundaries:** Retried tasks can repeat side effects. State since the last checkpoint can be lost. `store.ex` uses a last-writer-wins CRDT and attempts synchronous replication to connected peers, but does not reject failed multicall results; this is not consensus-backed durability. Roster fencing is enabled by default at three members; two-member partitions favor availability and may run duplicate services. Fencing is membership-based, not lease-based, so strict instantaneous singleton guarantees are not claimed.

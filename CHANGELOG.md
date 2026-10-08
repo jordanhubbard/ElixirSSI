@@ -15,6 +15,11 @@
   The image includes Pi 5 and CM5 boot files; physical-board validation is
   still pending. Installation instructions: [distribution guide](https://github.com/jordanhubbard/ElixirSSI/blob/v1.0.0/docs/user/distribution.md).
 
+- ElixirSSI: verified that inter-node IPC and distributed computation use BEAM
+  processes over TLS. Load-aware task dispatch and retry complement
+  checkpoint-based service failover; long-lived service placement uses hashing
+  or explicit migration, not automatic CPU-driven migration.
+
 - ElixirSSI: project verification now declares the actual system-image Make suite,
   with `make verify-update` to run it and `make verify` to check authority,
   retained source and image currency. The inherited greeting sample remains
