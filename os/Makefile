@@ -48,7 +48,7 @@ endif
 endif
 export SSI_BUILDER := $(BUILDER)
 
-SSI_SRC  := $(shell find ssi/lib ssi/config ssi/rel ssi/priv/monitor -type f) ssi/mix.exs substrate/ssi_init.c substrate/ssi_sys_nif.c
+SSI_SRC  := $(shell find ssi/lib ssi/config ssi/rel ssi/priv/monitor -type f) ssi/mix.exs ssi/version.json substrate/ssi_init.c substrate/ssi_sys_nif.c
 
 .PHONY: all build toolchain kernel release initramfs test test-unit test-build run run-virt cluster cluster-virt test-cluster test-desktop image-cm5 \
 	emulator test-emulator run-cm5 cluster-cm5 test-cm5 browser test-monitor clean help

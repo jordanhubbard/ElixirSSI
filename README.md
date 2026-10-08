@@ -71,9 +71,12 @@ flashing the image to eMMC or a CM5 Lite SD card.
 
 ## Release engineers
 
-Jordan Hubbard
+- `jordanhubbard`
 
 Project qualification: `make verify-update` runs the image build, default tests,
 emulator device tests and three-board CM5 acceptance suite. `make verify` checks
 current authority, source and image evidence. See the
 [verification contract](docs/user/framework-flow.md#verification-contract).
+
+Downloadable images and the workstation installer are described in
+[download and install](docs/user/distribution.md).

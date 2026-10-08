@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Hardware-free verification of the ElixirSSI Compute Module 5 image.
 
-QEMU cannot emulate the BCM2712, so this checks everything that does not need
-the silicon:
+This checks the Pi 5 and CM5 image without claiming physical-silicon validation:
 
   * the MBR has a bootable FAT32 partition and an ext4 data partition;
   * every file config.txt names (kernel, initramfs) exists on the FAT
@@ -115,8 +114,8 @@ def main():
     check("files named by config.txt are on the boot partition", all(n in files for n in named), ", ".join(named))
     cmdline = mtools("mtype", "::/cmdline.txt").decode()
     check("cmdline.txt is one line with a serial console", cmdline.count("\n") <= 1 and "console=serial0" in cmdline, cmdline.strip())
-    dtbs = sorted(f for f in files if f.startswith("bcm2712-rpi-cm5"))
-    check("CM5 and CM5 Lite device trees present", {"bcm2712-rpi-cm5-cm5io.dtb", "bcm2712-rpi-cm5l-cm5io.dtb"} <= set(dtbs), " ".join(dtbs))
+    dtbs = sorted(f for f in files if f.startswith("bcm2712-rpi-"))
+    check("Pi 5, CM5 and CM5 Lite device trees present", {"bcm2712-rpi-5-b.dtb", "bcm2712-rpi-cm5-cm5io.dtb", "bcm2712-rpi-cm5l-cm5io.dtb"} <= set(dtbs), " ".join(dtbs))
     check("device-tree overlays and overlay map present", "overlay_map.dtb" in files and sum(f.endswith(".dtbo") for f in files) > 100)
     conf = mtools("mtype", "::/ssi.conf").decode()
     check("ssi.conf carries a cluster secret", re.search(r"^secret = \S{16,}", conf, re.M) is not None)
@@ -132,7 +131,7 @@ def main():
     modular = compat_patterns(initramfs_aliases())
     check("matcher self-test: a made-up device is not claimed",
           not claimed("example,no-such-device", built + modular, vmlinux) and claimed("cdns,macb", built))
-    for dtb in ("bcm2712-rpi-cm5-cm5io.dtb", "bcm2712-rpi-cm5l-cm5io.dtb"):
+    for dtb in ("bcm2712-rpi-5-b.dtb", "bcm2712-rpi-cm5-cm5io.dtb", "bcm2712-rpi-cm5l-cm5io.dtb"):
         nodes = dt_nodes(os.path.join(B, "kernel/arch/arm64/boot/dts/broadcom", dtb))
         boot_path = {
             "eMMC/SD controller": "bcm2712-sdhci",

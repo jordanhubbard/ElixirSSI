@@ -1,7 +1,7 @@
 defmodule SSI.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version __DIR__ |> Path.join("version.json") |> File.read!() |> JSON.decode!() |> Map.fetch!("version")
 
   def project do
     [

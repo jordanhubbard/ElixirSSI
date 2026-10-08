@@ -202,7 +202,7 @@ controls the system from outside it; both are specified in
   image with a FAT32 boot partition (`config.txt`, `cmdline.txt`,
   `kernel_2712.img`, initramfs, BCM2712 device trees and overlays,
   `ssi.conf`) and an ext4 data partition. The same image is used by emulation
-  and by physical CM5 boards (eMMC, or SD on CM5 Lite).
+  and by physical Pi 5 (SD) and CM5 boards (eMMC, or SD on CM5 Lite).
 - The repository root MUST expose `build`, `run`, `test`, and `clean`.
   `run` builds and boots the image in the full CM5 emulator with a serial
   console; the generic `virt` machine is an explicit `run-virt` shortcut.
@@ -210,6 +210,17 @@ controls the system from outside it; both are specified in
   `test-cm5` runs the slower full emulated-cluster acceptance suite.
   `clean` removes assembled image and release outputs while preserving
   download/compiler caches, emulator disks and the cluster secret.
+
+## Distribution
+
+GitHub releases MUST include the checksummed prebuilt Pi 5/CM5 image and an
+installer for the prebuilt emulator and Elixir/OTP development environment.
+The installed launcher MUST run N image copies, preserve their data, and open
+the specified browser monitor with every endpoint configured. It MUST include
+the RemoteOS desktop client and document its host runtime requirements.
+Installation MUST verify asset hashes and refuse to overwrite an existing
+installation. Release acceptance MUST exercise the packaged installation
+without compiling the OS or emulator; physical qualification stays explicit.
 
 ## Emulated hardware
 

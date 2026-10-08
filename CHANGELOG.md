@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- ElixirSSI: downloadable Pi 5/CM5 image and ARM64 emulator/development
+  installer, with N-node launch, persistent cards, offline browser management,
+  pinned RemoteOS desktop packages and checksummed release assets.
+
 - ElixirSSI: project verification now declares the actual system-image Make suite,
   with `make verify-update` to run it and `make verify` to check authority,
   retained source and image currency. The inherited greeting sample remains

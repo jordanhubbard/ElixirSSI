@@ -102,3 +102,16 @@ Flavor, skill, workflow, routing, schema, or protocol versions merely because
 the distribution version changed. Never generate product claims from commit
 messages. Never hide a remote race by rewriting history. Never store credentials
 in project authority. A local tag is not proof of a successful push.
+
+## ElixirSSI distribution requirements
+
+This project's release is an installable system, not only a Git tag. The
+`literate.release.json` artifact gate MUST run `make release-assets` and retain
+its exact-revision file manifest. Publish every required role: the universal
+Pi 5/CM5 image, prebuilt ARM64 emulator and development containers, installer,
+launcher, offline browser monitor, RemoteOS desktop packages, source archives,
+installation manifest and checksums. The packaged installation MUST be tested
+without building the OS or emulator, with N nodes, browser status, persistent
+state, and the development runtime. Record physical-board qualification
+separately. A source archive or tag without the downloadable system assets is
+not a completed ElixirSSI release. See `docs/user/distribution.md`.
