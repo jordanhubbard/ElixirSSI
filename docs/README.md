@@ -11,6 +11,8 @@ is [watched from outside](architecture/elixirssi.md#watching-the-system-from-out
 the [CM5 emulation](architecture/cm5-emulation.md) that runs the flashable
 image without boards, and the `components/elixirssi/component.md`.
 
+Use [download and install](user/distribution.md) for release artifacts.
+
 Start with [getting started](user/getting-started.md) for installation and usage.
 See [active work](roadmap/active-work.md) for current development status.
 

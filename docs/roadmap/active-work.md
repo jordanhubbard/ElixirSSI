@@ -219,3 +219,16 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
   - [x] Align project metadata and operator documentation; refresh resolution audits; bind an executable verification suite to current source and image evidence
 - **Evidence:**
   - [x] Run the declared suite and demonstrate current verification passes and changed source or failed tests cannot reuse its receipt — make verify-update on macOS/Docker passed the image build, 49 Elixir tests, 12 build/target checks, 4 receipt failure/drift checks, 21 image checks, 10 RP1 tests and 29/29 three-board CM5 acceptance checks (failover 9.7 seconds). Current source/image fingerprints and all applicable litai verify gates pass; source-intelligence and HTML observability remain explicitly unconfigured. Evidence: verification/current.json and verification/system-image.json (2026-10-07).
+
+### [ ] SSI-012 — Ship a downloadable system image and installed cluster environment
+
+- **Priority:** P1
+- **Owner:** ElixirSSI release, installer and management experience
+- **Direction:** Publish a prebuilt image and an emulator/development installer on GitHub so users can run N nodes and reach the specified UI without building the OS.
+- **Conclusion:** Release policy still targets the greeting sample. Make distribution artifacts and installed multi-node UI access explicit release requirements; qualify board support separately from emulator evidence.
+- **Depends on:** none
+- **Implementation:**
+  - [x] Specify and implement downloadable image, prebuilt emulator bundle and installer with management UI access; align release policy and asset verification
+- **Evidence:**
+  - [x] Install from packaged artifacts without compiling; three emulated CM5 nodes form a cluster, the offline browser renders Healthy then Down and retains all members after reload, the packaged RemoteOS client captures a 1280x800 desktop frame, the development runtime reports Elixir 1.20.4/OTP 29, and restart preserves cards. Evidence: release artifact gate and its installed-check.json; host qualification: Apple Silicon macOS/Docker.
+  - [ ] Validate and publish exact release assets and checksums; physical Pi 5/CM5 boot remains unqualified under SSI-002.

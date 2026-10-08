@@ -4,15 +4,34 @@
   "version_authority": {
     "path": "literate.project.json",
     "format": "json-pointer",
-    "selectors": ["/version"]
+    "selectors": [
+      "/version"
+    ]
   },
-  "version_mirrors": [],
+  "version_mirrors": [
+    {
+      "path": "os/ssi/version.json",
+      "format": "json-pointer",
+      "selectors": [
+        "/version"
+      ]
+    }
+  ],
   "contributions": {
     "current_milestone": "{version}"
   },
-  "allowed_transitions": ["patch", "minor", "major", "prerelease", "explicit"],
+  "allowed_transitions": [
+    "patch",
+    "minor",
+    "major",
+    "prerelease",
+    "explicit"
+  ],
   "gate": {
-    "argv": ["litai", "test", "samples/hello-component", "--target", "host"],
+    "argv": [
+      "make",
+      "verify"
+    ],
     "timeout_seconds": 86400
   },
   "changelog": {
@@ -24,5 +43,35 @@
     "signed": false
   },
   "remote": "origin",
-  "provider": null
+  "provider": {
+    "kind": "github",
+    "repository": "jordanhubbard/ElixirSSI"
+  },
+  "documentation_authority": [
+    "docs/architecture/design-traceability.md"
+  ],
+  "artifact_gate": {
+    "argv": [
+      "make",
+      "release-assets-check"
+    ],
+    "timeout_seconds": 86400,
+    "manifest": "_build/release/files.json",
+    "required_roles": [
+      "image",
+      "emulator",
+      "development",
+      "source",
+      "emulator-source",
+      "kernel-source",
+      "installer",
+      "launcher",
+      "monitor",
+      "desktop-macos",
+      "desktop-linux",
+      "installation",
+      "checksums",
+      "installation-check"
+    ]
+  }
 }
