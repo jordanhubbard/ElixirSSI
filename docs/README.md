@@ -22,14 +22,16 @@ and the [project map](user/project-layout.md) identifies the authority for a cha
 
 ```mermaid
 flowchart LR
-    Spec[Component specification] --> Plan[Resolved plan]
-    Flavor[Selected Flavors] --> Plan
-    Parent[Exact repository ancestor DAG] --> Plan
-    Default[Removable +make preference] -.-> Plan
-    Skill[Exact skills] --> Plan
-    Plan --> Generate[Disposable source]
-    Generate --> Verify[Validate, build, and test]
+    Spec[Component specifications] --> Source[Retained Elixir and C source]
+    Source --> Build[Make and Docker: CM5 image]
+    Build --> Tests[Unit, image and full emulator tests]
+    Tests --> Receipt[Project verification receipt]
 ```
+
+Use `make verify-update` to qualify the image and `make verify` to check current
+authority, source and image evidence. The [verification contract](user/framework-flow.md#verification-contract)
+describes this project's suite and its physical-hardware boundary.
+
 
 See [readable specifications](user/specifications.md),
 [models and generation](user/models-and-generation.md),

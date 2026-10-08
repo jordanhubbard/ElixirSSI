@@ -59,8 +59,13 @@ flowchart LR
     RP1 -- "USB" --> MG["USB Ethernet: management port<br/>web :818I, TLS :848I, SSH :232I on the host"]
 ```
 
-`scripts/ssi-cm5` runs N boards. Each board gets its own sparse copy of the
-image as its eMMC, and a single RP1 Ethernet port on a shared switch with no
+`make run` starts one board and `make cluster N=3` starts three, using
+`scripts/ssi-cm5`. On macOS these commands run inside a Linux Docker container;
+source caches and card state use Docker volumes and management ports are
+published on localhost. Each board gets its own sparse copy of the
+image as its eMMC, keyed by the base image's content so a rebuilt image cannot
+silently reuse an old card. Older cards remain preserved. Each board has a
+single RP1 Ethernet port on a shared switch with no
 DHCP server, so the image's defaults fall back to link-local addressing as they
 would on a bare switch. Each board also gets a USB keyboard and, for tests, a
 USB Ethernet adapter (QEMU `usb-net`, bound by Linux's `cdc_ether` from the

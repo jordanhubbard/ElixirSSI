@@ -59,9 +59,21 @@ hardware abstraction layer), and it is a distributed system first.
 | Status and next steps | [docs/roadmap/active-work.md](docs/roadmap/active-work.md) |
 
 ```console
-cd os && make && make test && make cluster N=3
+make build
+make run       # full CM5 emulation, booting the same image you flash to hardware
+make test
+make clean     # retains compiler caches, emulated cards and the cluster secret
 ```
+
+`make cluster N=3` runs three emulated CM5 boards as one system. macOS uses
+Docker for Linux build and emulator tools. See the getting-started guide for
+flashing the image to eMMC or a CM5 Lite SD card.
 
 ## Release engineers
 
 Jordan Hubbard
+
+Project qualification: `make verify-update` runs the image build, default tests,
+emulator device tests and three-board CM5 acceptance suite. `make verify` checks
+current authority, source and image evidence. See the
+[verification contract](docs/user/framework-flow.md#verification-contract).

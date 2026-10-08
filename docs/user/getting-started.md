@@ -15,9 +15,17 @@ that behaves like one machine. See the [architecture](../architecture/elixirssi.
 
 ## Host prerequisites
 
-- Linux with Docker, `make`, `git`, `python3`, `curl`, `mkfs.ext4`, and QEMU
+- To build on macOS: Docker Desktop (running, with Linux containers), Apple's
+  command-line tools (`make`, `git`, `python3`), and `curl`. `make` automatically builds the
+  ARM64 kernel in Docker and assembles the initramfs there; no Homebrew Make or
+  cross compiler is required. Apple Silicon runs the builder natively; Intel
+  Macs need Docker's ARM64 emulation.
+- To build and run on Linux: Docker, `make` (GNU Make 4 or newer), `git`,
+  `python3`, `curl`, `mkfs.ext4`, and QEMU
   (`qemu-system-aarch64`). Debian/Ubuntu: `apt install qemu-system-arm
-  e2fsprogs build-essential bc flex bison libssl-dev libelf-dev`.
+  e2fsprogs build-essential bc flex bison libssl-dev libelf-dev patch
+  ninja-build pkg-config libglib2.0-dev libpixman-1-dev libslirp-dev libfdt-dev
+  python3-venv mtools` (including the full CM5 emulator's build dependencies).
 - An arm64 host with `/dev/kvm` runs the VMs at native speed. On x86-64, also
   install `gcc-aarch64-linux-gnu` and `qemu-user-static` (binfmt for the arm64
   builder image); VMs then run emulated and several times slower.
@@ -28,28 +36,51 @@ that behaves like one machine. See the [architecture](../architecture/elixirssi.
 ## Build
 
 ```console
-cd os
-make            # toolchain image, kernel, release, initramfs (first run ~25 min)
-make test       # host test suite: unit + multi-node tests with real peer BEAMs
+make build      # from the repository root; bare make does the same
+make run        # build the CM5 emulator and boot the flashable image
+make test       # unit/peer tests, build regressions, static image verification
+make clean      # remove assembled outputs; preserve caches, cards and cluster secret
 ```
 
 `make` fetches pinned, checksummed Erlang/OTP 29.1.1 and Elixir 1.20.4 sources
 and the Raspberry Pi `rpi-6.18.y` kernel. Outputs land in `os/build/`:
-`kernel/arch/arm64/boot/Image` and `ssi-initramfs.cpio.gz`.
+`kernel/arch/arm64/boot/Image`, `ssi-initramfs.cpio.gz`, and the flashable
+`cm5/elixirssi-cm5.img` with its compressed `.img.zst` copy. This is the same
+image that `make run` boots and that you flash to CM5 eMMC or a CM5 Lite SD card.
+Builds are incremental. Use `make image-cm5` to explicitly repack after changing
+image settings such as `SSI_CLUSTER` or `SSI_AUTHORIZED_KEYS`.
 
-## Run under QEMU
+On macOS, the kernel source and intermediate objects live in a persistent Docker
+volume named `elixirssi-kernel-<checkout-id>` (printed during the build), keeping
+them on a case-sensitive Linux filesystem. Finished kernel files and a
+`modules.tar` archive are copied back into `os/build/`; module filenames can also
+differ only by case, so they are unpacked only inside Docker. `make clean`
+preserves this cache; removing the
+named volume with `docker volume rm NAME` makes the next kernel rebuild download
+and compile afresh. `make JOBS=6` limits kernel compiler concurrency; by default the container
+uses its available CPUs. Linux can opt into this same path with
+`make KERNEL_DOCKER=1`. `make test` and `make image-cm5` also use Docker.
+
+On macOS, `run`, `cluster`, `emulator`, `test-emulator` and `test-cm5` use a
+Linux emulator container. Emulator sources and cards live in per-checkout Docker
+volumes (`elixirssi-emulator-*` and `elixirssi-cards-*`). The full CM5 model uses
+CPU emulation; KVM acceleration applies only to the explicit Linux `virt` shortcut.
+The advanced `test-monitor`, `test-cluster`, `test-desktop`, `run-virt` and
+`cluster-virt` commands still require Linux host tools.
+
+## Run the CM5 emulator
 
 ```console
-make run                 # one node; the serial console is your terminal
-make cluster N=3         # three nodes on a virtual switch; you get node 1's console
+make run                 # one full emulated CM5; serial console on your terminal
+make cluster N=3         # three emulated CM5s; you get board 1's console
 ```
 
-Quit QEMU with `Ctrl-A X`. In cluster mode the other nodes keep running
-headless; stop them with `scripts/ssi-qemu stop`. Node *I* forwards SSH to
-`localhost:222I` (password `elixir` in development):
+Quit QEMU with `Ctrl-A X`; exiting cluster mode also stops the other boards.
+Node *I* forwards SSH to port `2320 + I`, HTTP to `8180 + I` and HTTPS to
+`8480 + I` on localhost (SSH password `elixir` in development):
 
 ```console
-ssh -p 2222 root@localhost
+ssh -p 2321 root@localhost
 ```
 
 At the prompt (`ssi-550001(1)>`), the shell is Elixir with system commands:
@@ -71,8 +102,12 @@ SSI.Demo.Counter.inc()     # from any node; survives losing the one running it
 Verify a whole cluster automatically (boots VMs, kills one, restarts it):
 
 ```console
-make test-cluster
+make test-cm5
 ```
+
+For the faster generic QEMU `virt` developer path on Linux, use `make run-virt`,
+`make cluster-virt N=3` and `make test-cluster`. That path directly boots the
+kernel/initramfs rather than exercising the flashable card and CM5 devices.
 
 ## The cluster desktop
 
@@ -185,6 +220,9 @@ coming back, then pairs a second browser over TLS and uses every control
    python3 scripts/verify_cm5.py                    # layout and driver coverage
    ```
 
+   On macOS, run that verification inside the builder:
+   `SSI_WORKDIR=. ./mixdocker.sh 'python3 scripts/verify_cm5.py'`.
+
    The result is `os/build/cm5/elixirssi-cm5.img` (and `.img.zst`): a FAT32
    boot partition and a 2 GiB ext4 data partition (`SSI_DATA_MB` changes it).
 
@@ -227,7 +265,10 @@ make test-cm5           # the cluster acceptance suite on three boards
 ```
 
 Each board boots its own copy of the image from eMMC
-(`os/build/cm5emu/nodeI.img`). It has one Ethernet port on a shared virtual
+(`os/build/cm5emu/nodeI-IMAGEHASH.img`, inside the cards volume on macOS).
+An unchanged image reuses its card; a new image gets a new card and preserves
+the older card's state. Acceptance tests use separate disposable cards under
+`cm5emu/tests`, so testing does not reset interactive machines. It has one Ethernet port on a shared virtual
 switch, a USB keyboard, and a USB Ethernet adapter as a management port
 (web endpoint on `localhost:818I`, SSH on `localhost:232I`);
 `scripts/ssi-cm5 stop` pulls the power. Emulation
@@ -258,9 +299,11 @@ does not replace a run on real CM5s.
 
 ## Clean up
 
-`scripts/ssi-qemu stop` stops background VMs; `make clean` removes build
-outputs but keeps downloads and the kernel tree; deleting `os/build/` removes
-everything, including VM data disks.
+`make clean` removes the assembled image, release and initramfs. It retains
+download/compiler caches, emulator cards and `os/build/cm5/cluster.secret` so
+rebuilding does not silently create a different cluster identity. Docker volumes
+also survive `clean`. Deleting `os/build/` removes local VM data and the secret;
+deleting the cards Docker volume removes its emulated machines' data.
 
 ---
 
@@ -271,47 +314,19 @@ keep specifications as durable authority and generate source, current tests, and
 CycloneDX source SBOM into a disposable workspace. The commands below are for
 contributors, not end users.
 
-Validate the project and inspect the exact recipe (planning does not invoke a
-model or execute generated code):
+Validate and qualify the actual system image:
 
 ```console
-litai project validate
-litai lock --check
-litai plan samples/hello-component
+make verify-update
+make verify
 ```
 
-Every non-empty initialized project begins with a portable hello Component. With an
-authenticated coding CLI and the selected host toolchain, prove the complete local
-lifecycle before changing it:
+The first command builds the image and runs the default, emulator-device and
+three-board CM5 acceptance tests, publishing a receipt only on success. The
+second checks the receipt against current authority, retained source and local
+images. See the [verification contract](framework-flow.md#verification-contract)
+for scope and evidence locations. Physical-board qualification is separate.
 
-```console
-litai rebuild samples/hello-component --project . \
-  --allow-host-execution --update-receipt
-```
-
-The rebuild generates source and current tests from the specification, builds a
-runnable artifact, runs both generated and independent acceptance tests, executes the
-application, and commits the compact current passing receipt. Modify
-`samples/hello-component/component.md` to begin the first application, or use
-`litai init --empty` when no starter is wanted.
-
-Invoke the `Execute:` command printed by rebuild with `{"name":"LitAI"}` as its one
-argument. The known output is exactly
-`{"greeting":"Hello, LitAI!","name":"LitAI"}`.
-
-```mermaid
-flowchart LR
-    Spec[Specification] --> Recipe((Exact recipe))
-    Flavor[Selected Flavors] --> Recipe
-    Skill[Pinned skills] --> Recipe
-    Workflow[Workflow] --> Recipe
-    Route[Routing] --> Recipe
-    Recipe --> Source[Disposable source + tests + SBOM]
-    Source --> Build[Authorized build and verification]
-```
-
-`+flavor` selects a variation and `-flavor` removes one. Explicit Component and
-Flavor requirements outrank defaults, so `-bazel` removes the scaffold's Bazel
-preference before prompt assembly. Read the [framework flow](framework-flow.md) before
-adding a lifecycle driver that compiles or runs generated source, and use the
-[project map](project-layout.md) to change the owning artifact.
+The inherited greeting Component in `samples/hello-component` is an optional
+Literate AI example. Its Python generation recipe does not build ElixirSSI.
+Use `make build` and `make run` for the OS.

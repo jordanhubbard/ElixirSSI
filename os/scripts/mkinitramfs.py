@@ -99,12 +99,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--build", required=True, help="os/build directory")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--modroot", help="module installation root (default: BUILD/modroot)")
     args = ap.parse_args()
     b = os.path.abspath(args.build)
 
     gen = os.path.join(b, "kernel/usr/gen_init_cpio")
     kver = open(os.path.join(b, "kernel/include/config/kernel.release")).read().strip()
-    moddir = os.path.join(b, "modroot/lib/modules", kver)
+    moddir = os.path.join(args.modroot or os.path.join(b, "modroot"), "lib/modules", kver)
 
     entries, dirs = [], set()
 

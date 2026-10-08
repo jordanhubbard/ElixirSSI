@@ -26,7 +26,14 @@ dependency resolution beside it but is not hand-maintained prose. Extra specific
 interface files are exceptional named boundaries, not boilerplate for every Component.
 Harness vectors and private expected-value oracles live outside Component authority.
 
-The initializer installs the content-pinned `flavors/build-bazel/` policy and its exact
-`skills/specification-to-source/bazel-build-system/` input. The manifest selects it by
-default only when a Component declares a compatible `build.system` slot. It is not
-runtime enforcement or evidence that Bazel actually built an application.
+The system implementation is retained in `os/`: `ssi/` contains Elixir,
+`substrate/` contains the C boot shim and NIF, and `kernel/`, `toolchain/`,
+`emulator/` and `scripts/` own its Linux build and emulation. The root Makefile
+is the operator entry point. `scripts/verify-project.py` owns the project suite;
+`verification/current.json` and `verification/system-image.json` record a passing
+run. See [verification](framework-flow.md#verification-contract).
+
+The inherited `samples/hello-component` remains a framework example. Its
+Python/Make/pip/Linux defaults apply only to compatible Flavor slots; they are
+not the target definition of the ElixirSSI operating system. There is no selected
+Bazel build path in this project.

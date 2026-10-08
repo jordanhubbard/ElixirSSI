@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- ElixirSSI: project verification now declares the actual system-image Make suite,
+  with `make verify-update` to run it and `make verify` to check authority,
+  retained source and image currency. The inherited greeting sample remains
+  separate from OS qualification.
+
+- ElixirSSI: standard root `build`, `run`, `test`, and `clean` targets now
+  select the flashable CM5 image and full CM5 emulator path. The generic
+  machine remains available as `run-virt`; clean preserves the cluster secret
+  and emulated cards. Docker-hosted CM5 emulation boots the flashable image on
+  macOS and passes the three-board cluster acceptance suite.
+- ElixirSSI: builds on macOS through Docker using Apple Make. The kernel and
+  its case-sensitive source and module files stay on Linux filesystems during
+  compilation and initramfs assembly; finished artifacts appear in `os/build/`.
+  Native Linux builds remain available.
 - ElixirSSI: a stand-alone operating system with the Erlang BEAM as PID 1 and
   Elixir as the system language, booting the Raspberry Pi Compute Module 5
   (and the identical kernel under QEMU/KVM). Any number of nodes form one

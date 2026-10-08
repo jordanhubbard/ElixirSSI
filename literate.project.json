@@ -78,32 +78,21 @@
   "test_receipt": "verification/current.json",
   "test_receipt_policy": {
     "schema": "urn:literate-ai:schema:v1:project-test-receipt-policy",
-    "suite_id": "literate-ai-standard",
+    "suite_id": "elixirssi-system-image",
     "suite_version": "1.0.0",
     "runner_identity": {
       "schema": "urn:literate-ai:schema:v1:content-identity",
       "algorithm": "sha256",
-      "digest": "7ccde413bc67d62812b1026960c22c25d5efbbe0dddd4194c0b2cbf709d4363c"
+      "digest": "44091cf81a51b06ffcdc704d1efc59156fa67939a7ca94733092f591c370d672"
     },
     "required_evidence_kinds": [
       "acceptance-result",
       "build-result",
-      "generation-provenance",
       "lifecycle-command",
-      "lifecycle-plan",
-      "lifecycle-request",
-      "observation-result",
-      "resolved-sbom",
-      "security-scan-report",
-      "source-cache-decision",
-      "source-cache-lifecycle",
-      "source-intelligence",
-      "source-sbom",
       "test-report",
-      "test-runner",
-      "workspace-admission"
+      "test-runner"
     ],
-    "minimum_test_count": 1
+    "minimum_test_count": 4
   },
   "default_flavor_selectors": [
     "+flavor://literate-ai/lang-python",
@@ -120,7 +109,7 @@
     "default_branch": "main",
     "main_state": "free",
     "pre_release_version": null,
-    "default_component": null,
+    "default_component": "components/elixirssi",
     "sample_component_roots": [
       "samples"
     ],

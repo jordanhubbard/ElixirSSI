@@ -19,6 +19,7 @@ board to board, since a CM5 has no second port for host forwarding, and
 the keyboard is a USB keyboard on RP1's xHCI.
 """
 import argparse
+import glob
 import os
 import pty
 import re
@@ -117,9 +118,21 @@ def qemu(*args):
 def use_cm5():
     """Run every node as an emulated CM5 board (scripts/ssi-cm5)."""
     global CLUSTER, QEMU, BOOT_TIMEOUT
-    CLUSTER = os.path.join(OS, "build", "cm5emu")
+    # Acceptance tests reflash cards; keep them separate from interactive state.
+    CLUSTER = os.path.join(OS, "build", "cm5emu", "tests")
+    os.environ["SSI_CM5_STATE_DIR"] = CLUSTER
     QEMU = os.path.join(OS, "scripts", "ssi-cm5")
     BOOT_TIMEOUT = 300
+
+
+def reset_node(index):
+    """Discard this test node's cards and logs before a fresh acceptance run."""
+    paths = [os.path.join(CLUSTER, f"node{index}{suffix}")
+             for suffix in (".ext4", ".log", ".img")]
+    paths += glob.glob(os.path.join(CLUSTER, f"node{index}-*.img"))
+    for path in paths:
+        if os.path.exists(path):
+            os.remove(path)
 
 
 def wait_log(index, text, timeout):
@@ -222,10 +235,7 @@ def main():
     qemu("stop")
     for i in range(1, n + 2):
         # A CM5 starts from a freshly flashed card
-        for suffix in (".ext4", ".log", ".img"):
-            p = os.path.join(CLUSTER, f"node{i}{suffix}")
-            if os.path.exists(p):
-                os.remove(p)
+        reset_node(i)
 
     service = None
     endpoint = None
