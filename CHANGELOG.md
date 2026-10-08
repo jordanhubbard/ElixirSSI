@@ -2,9 +2,23 @@
 
 ## Unreleased
 
+## 1.0.0 - 2026-10-08
+
+[README.md](https://github.com/jordanhubbard/ElixirSSI/blob/v1.0.0/README.md)
+
 - ElixirSSI: downloadable Pi 5/CM5 image and ARM64 emulator/development
   installer, with N-node launch, persistent cards, offline browser management,
   pinned RemoteOS desktop packages and checksummed release assets.
+
+- Qualification: three emulated CM5 nodes, offline installation, browser
+  management and the RemoteOS desktop passed on Apple Silicon with Docker.
+  The image includes Pi 5 and CM5 boot files; physical-board validation is
+  still pending. Installation instructions: [distribution guide](https://github.com/jordanhubbard/ElixirSSI/blob/v1.0.0/docs/user/distribution.md).
+
+- ElixirSSI: verified that inter-node IPC and distributed computation use BEAM
+  processes over TLS. Load-aware task dispatch and retry complement
+  checkpoint-based service failover; long-lived service placement uses hashing
+  or explicit migration, not automatic CPU-driven migration.
 
 - ElixirSSI: project verification now declares the actual system-image Make suite,
   with `make verify-update` to run it and `make verify` to check authority,
