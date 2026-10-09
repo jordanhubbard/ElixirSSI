@@ -31,6 +31,7 @@ defmodule SSI.Application do
       SSI.Status.Journal,
       {DynamicSupervisor, name: SSI.Service.Sup, strategy: :one_for_one},
       SSI.Service.Manager,
+      SSI.Deploy,
       SSI.Web,
       SSI.SSH,
       SSI.Console.TTY,

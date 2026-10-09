@@ -7,60 +7,60 @@ The same image targets Raspberry Pi 5, CM5 and CM5 Lite and runs on the CM5
 emulator. Physical-board boot qualification is still pending; release evidence
 identifies emulation and static board checks separately.
 
-## Workstation installation
+## Command-node installation
 
-The first installer supports Apple Silicon macOS and ARM64 Linux with Docker
-and Python 3.12 or newer. No OS or emulator compilation is required. Download
-`install-elixirssi.py` from the release and run:
-
-```console
-python3 install-elixirssi.py --prefix "$HOME/ElixirSSI"
-~/ElixirSSI/elixirssi start --nodes 3
-```
-
-The installer fetches the release's checksummed image, prebuilt emulator,
-Elixir/OTP development container, source and desktop packages. For offline
-installation, download the release assets into one folder and use
-`--assets PATH --offline`. Installation refuses an existing destination, so an
-upgrade cannot silently overwrite your cards. Keep old installations for their
-persistent state.
-
-`start --nodes N` boots N copies of the image on a private virtual switch and
-opens the self-contained browser monitor with all endpoints configured. It
-shows the aggregate SSI system, individual members, services and the timeline;
-it remains available when the entire cluster is stopped. Pair controls from a
-node shell as described in [getting started](getting-started.md). Management
-ports bind to host loopback; HTTP is 8180+I, HTTPS 8480+I and SSH 2320+I.
-The emulated console password is `elixir`; each installation has a separate
-cluster secret. Virtual RAM defaults to 4096 MiB per node; choose N according
-to host resources, or use `--memory MIB`.
+The command-node package uses Elixir/OTP and Phoenix LiveView. Apple Silicon
+macOS and ARM64 Linux need Docker; no local Elixir or Python installation is
+required. Put the release assets and `SHA256SUMS` in one directory, then open
+`install-elixirssi.command` on macOS, or run:
 
 ```console
-~/ElixirSSI/elixirssi status
-~/ElixirSSI/elixirssi monitor
-~/ElixirSSI/elixirssi stop
-~/ElixirSSI/elixirssi start --nodes 3
-~/ElixirSSI/elixirssi dev
-~/ElixirSSI/elixirssi test
+sh install-elixirssi.command "$HOME/ElixirSSI"
 ```
 
-Stop/start preserves cards in an installation-specific Docker volume. `dev` opens the prebuilt Elixir/OTP environment at
-`/os/ssi`; `elixirssi test` runs the installed source tests with a named BEAM node. The source tree also
-contains the full Make build for deliberate system development.
+The bootstrap verifies the assets and starts the packaged Elixir installer.
+Installation is offline and refuses to overwrite an existing destination. It
+loads the command application, emulator and development images and preserves
+an installed source copy. Open `~/ElixirSSI/ElixirSSI.command` or run
+`~/ElixirSSI/elixirssi` to enter the workspace. The default address is
+`http://localhost:4000`; the launcher supplies a one-use sign-in ticket.
+
+All ordinary work happens in that interface:
+
+- **Cluster:** configure node count and memory, start/stop/restart emulated Pis,
+  inspect member resources and services, and register physical Pi addresses.
+- **Projects:** create and edit Mix projects, fetch dependencies, format, compile,
+  test and evaluate. Builds run in isolated containers with only the project
+  mounted. Deployment sends runtime applications and resources to a selected,
+  trusted node; shared user dependencies may require restarting managed apps.
+- **Console:** verify SSH fingerprints, connect to nodes, inspect processes and
+  logs, move services, and evaluate Elixir on an explicit target.
+- **Desktop:** use the guest's windows, graphics and shell directly in the browser.
+- **Operations:** follow results and failures, including interrupted operations
+  after a command-node restart.
+
+Stop/start keeps each virtual disk and the installation's cluster identity.
+The command application stays available when the cluster is stopped. Local
+management ports bind to loopback: HTTP is 8180+I, HTTPS 8480+I and SSH 2320+I.
+The emulator SSH password is `elixir`; verify its fingerprint in Console before
+trusting it. Each installation has a separate cluster secret. Virtual RAM
+defaults to 4096 MiB per node; choose settings appropriate for the host.
 
 ## Graphical desktop
 
-The installer includes the pinned RemoteOS-SDL executable for your host. It
-needs the host's SDL2, SDL2_image, SDL2_ttf and FFmpeg runtime libraries. On
-macOS install them with `brew install sdl2 sdl2_image sdl2_ttf ffmpeg`; on
-ARM64 Debian/Ubuntu use the corresponding distribution runtime packages.
+In Console, establish a trusted SSH connection first. In Desktop, select that
+connection and the command-node address reachable from the guest. Docker Desktop
+uses `host.docker.internal:4010`. The Elixir bridge authenticates the guest; the
+browser uses its existing Phoenix session. No SDL installation or separate
+window is needed. The cluster owns the compositor and application state, so
+moving its desktop service restores the windows and shell history on another
+member. Shell variable bindings are local to the old evaluator and are not
+carried over.
 
-Start `~/ElixirSSI/elixirssi desktop` on a trusted network, then on Docker
-Desktop use `start --nodes 3 --desktop host.docker.internal:17010`. On Linux,
-provide a host address reachable from Docker. The SSI desktop includes the
-cluster monitor, process view, distributed Mandelbrot renderer and Elixir
-shell, and survives failure of the member drawing it. The RemoteOS transport
-is for a trusted network or SSH tunnel.
+The local launcher publishes the desktop bridge only on loopback. Physical Pis
+need a private transport that can reach it; the bridge protocol itself is not
+encrypted. Do not expose it as a public endpoint. Command-node remote access
+likewise needs a configured authenticated transport such as an SSH tunnel or TLS.
 
 ## Physical Raspberry Pi 5 and CM5
 
@@ -75,15 +75,17 @@ Before boot, edit `ssi.conf` on the FAT partition: give every board in your
 cluster the same fresh `secret` and `cluster` name; configure SSH credentials
 or copy `authorized_keys`. The downloadable image uses the explicitly warned
 insecure default secret, never the release builder's private cluster secret.
-Set `desktop = WORKSTATION-IP:17010` for RemoteOS. Connect Ethernet and power
-on each board, then open any member's HTTP address or the downloaded
-`monitor.html#endpoints=HOST1,HOST2,...`. Pair controls from the console or SSH.
+Connect Ethernet and power on each board. Register its HTTP address in the
+Phoenix Cluster view, then verify its SSH fingerprint in Console. The guest
+also serves its status page directly; the command workspace is the main
+operator interface.
 
 ## Release verification
 
 The release skill requires every asset through `literate.release.json`.
 `make release-assets` packages accepted products and emits an exact-commit
 manifest. The release gate checks source/image currency; installer qualification
-runs the packaged environment without compiling. Source archives accompany the
+runs the packaged environment without compiling. The completed command-node conversion
+and its qualification are recorded in SSI-016 in the [work queue](../roadmap/active-work.md). Source archives accompany the
 kernel and patched emulator. `SHA256SUMS` covers the public files; the release
 publisher checks uploaded bytes against the qualified manifest.

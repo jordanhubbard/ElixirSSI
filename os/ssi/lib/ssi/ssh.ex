@@ -39,7 +39,7 @@ defmodule SSI.SSH do
       [
         key_cb: {SSI.SSH.Keys, []},
         shell: &shell/2,
-        exec: :disabled,
+        exec: {:direct, &exec/3},
         id_string: ~c"ElixirSSI",
         parallel_login: true,
         auth_methods: if(password, do: ~c"publickey,password", else: ~c"publickey")
@@ -58,6 +58,29 @@ defmodule SSI.SSH do
   end
 
   defp dot_iex, do: if(File.exists?("/root/.iex.exs"), do: "/root/.iex.exs", else: "")
+
+  @doc "Evaluate Elixir for an authenticated SSH exec request, with a bounded evaluation lifetime."
+  def exec(command, _user, _peer) do
+    source = to_string(command)
+    if byte_size(source) > 1_048_576 do
+      {:error, "Elixir command exceeds 1 MiB"}
+    else
+      task = Task.Supervisor.async_nolink(SSI.TaskSup, fn ->
+        try do
+          {value, _} = Code.eval_string(source, [], file: "ssh")
+          {:ok, inspect(value, limit: 100, printable_limit: 65_536)}
+        rescue
+          error -> {:error, Exception.message(error)}
+        catch
+          kind, reason -> {:error, "#{kind}: #{inspect(reason)}"}
+        end
+      end)
+      case Task.yield(task, 30_000) || Task.shutdown(task, :brutal_kill) do
+        {:ok, result} -> result
+        _ -> {:error, "Elixir evaluation timed out or terminated"}
+      end
+    end
+  end
 
   defp shell(_user, _peer) do
     spawn(fn ->
@@ -83,14 +106,20 @@ defmodule SSI.SSH.Keys do
   defp cluster_host_key do
     case SSI.Store.get(:system, :ssh_host_key) do
       nil ->
-        key = :public_key.generate_key({:namedCurve, :ed25519})
-        SSI.Store.put_sync(:system, :ssh_host_key, key)
-        # Concurrent first boots may race; the replicated value wins everywhere.
-        SSI.Store.get(:system, :ssh_host_key)
+        # Fresh nodes derive the same key even before their stores converge.
+        # Do not write a new key over a legacy identity still arriving from peers.
+        derive_host_key(SSI.Config.get("secret"), SSI.Cluster.Identity.cluster())
 
       key ->
         key
     end
+  end
+
+  @doc false
+  def derive_host_key(secret, cluster) do
+    seed = :crypto.mac(:hmac, :sha256, secret, "ssh-host:" <> cluster)
+    {public, ^seed} = :crypto.generate_key(:eddsa, :ed25519, seed)
+    {:ECPrivateKey, :ecPrivkeyVer1, seed, {:namedCurve, {1, 3, 101, 112}}, public, :asn1_NOVALUE}
   end
 
   defp authorized do

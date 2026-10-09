@@ -249,3 +249,56 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
 - **Process placement:** `load.ex` samples BEAM scheduler wall time and run queues once per second; score = utilization + queue length / online schedulers. `sched.ex` places spawn/run on the lowest score and interleaves parallel tasks across members up to one in-flight item per scheduler by default. Tasks are lightweight BEAM processes under each node's Task.Supervisor. Membership is reread at dispatch; monitored failed items are retried up to three times.
 - **Service recovery:** `service.ex` places each named GenServer using rendezvous hashing or an explicit pin. On node loss a surviving owner starts a new process from application checkpoints; explicit move checkpoints/stops/starts the service. This is application-state recovery, not migration of a process heap, mailbox or instruction pointer. Service placement is not CPU-load-sensitive, and ordinary Kernel.spawn processes are not automatically distributed or recovered. The task coordinator is local to its caller and is not itself replicated.
 - **Fault-tolerance boundaries:** Retried tasks can repeat side effects. State since the last checkpoint can be lost. `store.ex` uses a last-writer-wins CRDT and attempts synchronous replication to connected peers, but does not reject failed multicall results; this is not consensus-backed durability. Roster fencing is enabled by default at three members; two-member partitions favor availability and may run duplicate services. Fencing is membership-based, not lease-based, so strict instantaneous singleton guarantees are not claimed.
+
+### [x] SSI-014 — Build from an absent output directory
+
+- **Priority:** P1
+- **Owner:** ElixirSSI component and kernel build tooling
+- **Direction:** Fix the fresh-checkout build failure, commit and push.
+- **Conclusion:** Kernel export writes modules.tar before creating os/build. Verification creates its log directory there first and masks the defect. Make export self-contained and exercise the real export script against an absent output directory.
+- **Depends on:** none
+- **Implementation:**
+  - [x] Create the export directory before writing artifacts and specify fresh-checkout behavior
+  - [x] Add a regression that executes the kernel export script with real filesystem operations
+- **Evidence:**
+  - [x] Regression fails before the fix and passes after it — KernelExportTests reproduces the missing modules.tar parent on the original script; passes after directory creation. Eight target tests, four verification-runner tests and two installer tests also pass.
+  - [x] Plain make build succeeds from absent os/build on macOS Docker — Apple Make completed the kernel export, runtime, initramfs and CM5 image (2026-10-08).
+  - [x] Complete full project verification — the original kernel export fix passes the full suite after the independent Docker Desktop mount repair in SSI-015. Fresh receipts are in verification/current.json and verification/system-image.json (2026-10-08).
+
+### [x] SSI-015 — Keep Docker Desktop emulator state on Linux volumes
+
+- **Priority:** P1
+- **Owner:** ElixirSSI build and emulator tooling
+- **Direction:** Fix the Docker Desktop blocker for supported macOS and Windows configurations.
+- **Conclusion:** Nested emulator and card volumes beneath the host source bind can resolve to the host filesystem on Docker Desktop. Mount Linux state independently, route all consumers through explicit paths, and verify the actual filesystem before preparing sources or cards.
+- **Depends on:** none
+- **Implementation:**
+  - [x] Use independent emulator and card mounts with explicit paths throughout build and acceptance — retain volume names, guard mounts before writes, route boot helpers and test cards, and auto-select Docker on Windows/WSL2.
+  - [x] Cover Docker Desktop transport and path routing with regressions and document supported host invocation.
+- **Evidence:**
+  - [x] Regression tests exercise independent mounts and test-card isolation — 13 target checks include both Docker paths, missing-mount rejection before cleanup, boot-helper routing, card isolation and simulated WSL2 detection.
+  - [x] Build and full verification succeed on macOS Docker Desktop; report Windows qualification accurately — make verify-update passed all four stages: 49 Elixir tests, 18 build/target checks, 27 image checks, 10 RP1 tests and 29/29 three-board CM5 checks (service failover 9.3 seconds). Both /emulator and /cards were confirmed on Linux ext4. Current source and image identities are bound in verification/system-image.json and verification/current.json. Source-intelligence and HTML-observability remain explicitly unconfigured. Windows/WSL2 selection and transport are regression-tested; no Windows host was available for an end-to-end run (2026-10-08).
+
+### [x] SSI-016 — Elixir command node and development workspace
+
+- **Priority:** P1
+- **Owner:** ElixirSSI command-node Component, distribution and monitor
+- **Direction:** Make command and control an Elixir/Phoenix application on the command node, with an integrated development environment for Elixir users.
+- **Delivered:** Supervised OTP/Phoenix workspace with authentication, durable settings and operation history, emulated instance lifecycle, physical Pi registration, process/service inspection, verified SSH console, project editing and isolated Mix jobs. Deployment includes runtime OTP dependencies and resources, validates transfers and restores the previous application set on activation failure. The guest desktop renders and accepts input in the same workspace.
+- **Installation:** Packaged Elixir installer and emulator supervisor replace the installed Python manager and separate SDL/monitor entrypoints. Adoption preserves existing cards, projects and cluster identity. Fresh SSH identities derive consistently before replication converges; legacy stored keys remain valid.
+- **Plan:** [Command-node architecture](../architecture/command-node.md)
+- **Validation:** `make verify-update` passed all four stages: build, unit/build/image tests, 10 RP1 tests and 29 three-board CM5 checks. Unit coverage includes 18 command tests and 57 OS tests. Fresh packaged browser acceptance passed login, lifecycle, editor/tests, dependency/resource deployment, desktop input, restart persistence, physical-node registration, mobile layout and operation while the cluster is stopped. Existing-installation browser checks also exercised service migration, desktop recovery and a Hex dependency deployment. Peer survey found no open issues, reviews or other worktrees to reconcile.
+- **Boundary:** Qualification ran on macOS ARM Docker Desktop. Physical boards remain a separate hardware gate; these results do not claim Windows qualification or publish a release.
+
+### [ ] SSI-017 — Merge outstanding work and publish ElixirSSI 1.1.0
+
+- **Priority:** P1
+- **Owner:** Release policy and command-node distribution
+- **Direction:** Commit and push, merge all branches, and create a new release.
+- **Conclusion:** Integrate the outstanding Phoenix branch through PR #4; other remote branch tips are already ancestors of main. Cut a minor release with matching OS and command-app versions and all required downloadable assets. Hosted CI is not configured. The user explicitly authorized the existing verified project and packaged-install gates for this release.
+- **Depends on:** none
+- **Implementation:**
+  - [ ] Merge all outstanding branch work and declare command-app version mirroring
+  - [ ] Prepare, qualify and publish version 1.1.0 through litai release
+- **Evidence:**
+  - [ ] Verify exact prepared revision, packaged three-node browser acceptance and uploaded release assets

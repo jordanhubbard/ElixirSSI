@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+docker run --rm -v "$root/command:/work" -w /work \
+  -e HEX_OFFLINE=0 -e HEX_HTTP_TIMEOUT=120 -e HEX_HTTP_CONCURRENCY=2 \
+  -e MIX_HOME=/work/_build/mix -e HEX_HOME=/work/_build/hex \
+  elixirssi-builder:otp29.1.1-ex1.20.4 sh -c \
+  'if [ ! -d "$MIX_HOME/archives" ]; then mix local.hex --force; fi; mix deps.get --check-locked && mix format --check-formatted && mix test'

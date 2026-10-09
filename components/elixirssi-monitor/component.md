@@ -18,6 +18,11 @@ source_dependencies: []
 ---
 # ElixirSSI monitor
 
+This component retains the guest status protocol and standalone diagnostic
+monitor. The installed user interface is the Phoenix command node specified in
+`components/elixirssi-command/component.md`; installation does not require this
+standalone page or expose it as a second management entrypoint.
+
 How an [ElixirSSI](../elixirssi/component.md) cluster is watched, and acted
 on, from outside it: the status endpoint every member serves, and the
 monitor page that runs in a browser and keeps working when members, or all

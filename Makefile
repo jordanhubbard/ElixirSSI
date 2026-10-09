@@ -7,12 +7,13 @@ $(TARGETS):
 	$(MAKE) -C os $@
 
 # Full project verification includes retained source and built image currency.
-.PHONY: test verify verify-update test-verification
-test: test-verification
+.PHONY: test verify verify-update test-verification test-command
+test: test-verification test-command
 	$(MAKE) -C os test
 test-verification:
 	python3 scripts/test-verification.py
-	python3 scripts/distribution/test-installer.py
+test-command:
+	bash scripts/test-command
 verify:
 	python3 scripts/verify-project.py
 verify-update:

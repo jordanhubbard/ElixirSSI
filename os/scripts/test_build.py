@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -64,6 +65,57 @@ class DockerKernelTests(unittest.TestCase):
         self.assertEqual(sum(arg.startswith("elixirssi-kernel-") and
                              arg.endswith(":/kernel") for arg in first), 1)
         self.assertIn("SSI_KERNEL_JOBS", first)
+
+
+class KernelExportTests(unittest.TestCase):
+    def test_export_creates_missing_build_directory(self):
+        # Run the actual script with isolated paths and a stub compiler. Keep
+        # tar/cp/mkdir real: mocking Docker alone cannot catch export failures.
+        with tempfile.TemporaryDirectory(prefix="kernel-export-") as temporary:
+            root = Path(temporary)
+            kernel, checkout, binary = root / "kernel", root / "os", root / "bin"
+            source, output = kernel / "src", kernel / "out"
+            (source / "scripts/kconfig").mkdir(parents=True)
+            (source / "Makefile").touch()
+            merge = source / "scripts/kconfig/merge_config.sh"
+            merge.write_text("#!/bin/sh\nexit 0\n")
+            merge.chmod(0o755)
+            checkout.mkdir()
+            binary.mkdir()
+            for name, content in {
+                ".config": "config", "vmlinux": "kernel", "usr/gen_init_cpio": "tool",
+                "include/config/kernel.release": "test-kernel\n",
+                "arch/arm64/boot/Image": "image",
+                "arch/arm64/boot/dts/board.dtb": "device tree",
+            }.items():
+                path = output / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            make = binary / "make"
+            make.write_text(
+                f"#!{sys.executable}\n"
+                "import pathlib, sys\n"
+                "if 'modules_install' in sys.argv:\n"
+                "    dest = next(a.split('=', 1)[1] for a in sys.argv if a.startswith('INSTALL_MOD_PATH='))\n"
+                "    modules = pathlib.Path(dest) / 'lib/modules/test-kernel'\n"
+                "    modules.mkdir(parents=True)\n"
+                "    (modules / 'modules.dep').write_text('driver.ko:\\n')\n"
+                "    (modules / 'driver.ko').write_text('module')\n"
+            )
+            make.chmod(0o755)
+            script = (OS / "scripts/build-kernel.sh").read_text()
+            # Relocate container mount points; the export logic stays unchanged.
+            script = script.replace("/kernel/", str(kernel) + "/").replace("/os/", str(checkout) + "/")
+            script_path = root / "export.sh"
+            script_path.write_text(script)
+            result = subprocess.run(["sh", str(script_path)], capture_output=True, text=True,
+                                    env=dict(os.environ, PATH=f"{binary}:{os.environ['PATH']}",
+                                             SSI_UID=str(os.getuid()), SSI_GID=str(os.getgid()),
+                                             SSI_KERNEL_JOBS="1"))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual((checkout / "build/kernel/arch/arm64/boot/Image").read_text(), "image")
+            with tarfile.open(checkout / "build/modules.tar") as archive:
+                self.assertEqual(archive.extractfile("lib/modules/test-kernel/driver.ko").read(), b"module")
 
 
 class InitramfsTests(unittest.TestCase):

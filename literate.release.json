@@ -10,6 +10,13 @@
   },
   "version_mirrors": [
     {
+      "path": "command/version.json",
+      "format": "json-pointer",
+      "selectors": [
+        "/version"
+      ]
+    },
+    {
       "path": "os/ssi/version.json",
       "format": "json-pointer",
       "selectors": [
@@ -61,14 +68,12 @@
       "image",
       "emulator",
       "development",
+      "command",
       "source",
       "emulator-source",
       "kernel-source",
       "installer",
       "launcher",
-      "monitor",
-      "desktop-macos",
-      "desktop-linux",
       "installation",
       "checksums",
       "installation-check"

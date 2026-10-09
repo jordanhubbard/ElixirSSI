@@ -28,7 +28,10 @@ CM5_IMAGE := $(BUILD)/cm5/elixirssi-cm5.img
 BUILDER  := elixirssi-builder:otp$(OTP_VERSION)-ex$(ELIXIR_VERSION)
 N        ?= 3
 export N
-KERNEL_DOCKER ?= $(if $(filter Darwin,$(shell uname -s)),1,0)
+# Windows Docker Desktop is driven from WSL2; both it and macOS need Linux
+# volumes for case-sensitive compiler and emulator state.
+KERNEL_DOCKER ?= $(if $(filter Darwin,$(shell uname -s)),1,$(if $(findstring microsoft,$(shell uname -r | tr A-Z a-z)),1,0))
+EMULATOR_DOCKER ?= $(KERNEL_DOCKER)
 ifeq ($(KERNEL_DOCKER),1)
 JOBS     ?=
 else
@@ -166,7 +169,7 @@ image-cm5:
 
 EMULATOR := $(BUILD)/emulator/current/build/qemu-system-aarch64
 
-ifeq ($(shell uname -s),Darwin)
+ifeq ($(EMULATOR_DOCKER),1)
 CM5_EXEC := bash scripts/docker-emulator.sh
 emulator:
 	$(CM5_EXEC) build

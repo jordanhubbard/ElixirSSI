@@ -21,6 +21,7 @@ make O="$out" ARCH=arm64 INSTALL_MOD_PATH=/kernel/modroot INSTALL_MOD_STRIP=1 mo
 # Module names such as xt_RATEEST.ko and xt_rateest.ko also require a
 # case-sensitive filesystem. Transport them as an archive, never loose files
 # on the macOS mount. Export only the indexes needed by verify_cm5.py there.
+mkdir -p /os/build
 tar -C /kernel/modroot -cf /os/build/modules.tar lib
 kver=$(cat "$out/include/config/kernel.release")
 rm -rf /os/build/modroot

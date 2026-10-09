@@ -17,13 +17,13 @@ defmodule SSI.Remote do
   @reply_timeout 10_000
 
   @doc "Connect and negotiate. `endpoint` is `\"host:port\"`."
-  def connect(endpoint, client \\ "elixirssi/#{Application.spec(:ssi, :vsn)}") do
+  def connect(endpoint, client \\ "elixirssi/#{Application.spec(:ssi, :vsn)}", token \\ nil) do
     with {:ok, host, port} <- parse(endpoint),
          {:ok, sock} <-
            :gen_tcp.connect(host, port, [:binary, active: false, packet: :raw, nodelay: true, sndbuf: 1_048_576], @connect_timeout) do
       conn = %__MODULE__{sock: sock}
 
-      case call(conn, "hello", %{protocol: 2, client: client}) do
+      case call(conn, "hello", %{protocol: 2, client: client, token: token}) do
         {:ok, result, conn} -> {:ok, %{conn | features: result["features"] || [], limits: result["limits"] || %{}}}
         {:error, reason, _} -> close(conn) && {:error, reason}
       end

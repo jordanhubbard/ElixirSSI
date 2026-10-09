@@ -63,8 +63,10 @@ start2=$((start1 + size1))
 size2=$((data_mb * 2048))
 truncate -s $(( (start2 + size2) * 512 )) "$img"
 printf 'label: dos\n%s,%s,c,*\n%s,%s,83\n' $start1 $size1 $start2 $size2 | sfdisk -q "$img"
-dd if="$out/boot.vfat" of="$img" bs=512 seek=$start1 conv=notrunc status=none
-dd if="$out/data.ext4" of="$img" bs=512 seek=$start2 conv=notrunc status=none
+# Both partitions are MiB-aligned. Large sparse writes avoid millions of tiny
+# writes through Docker Desktop's shared filesystem without changing the layout.
+dd if="$out/boot.vfat" of="$img" bs=1M seek=$((start1 / 2048)) conv=notrunc,sparse status=none
+dd if="$out/data.ext4" of="$img" bs=1M seek=$((start2 / 2048)) conv=notrunc,sparse status=none
 rm -f "$out/boot.vfat" "$out/data.ext4"
 zstd -q -T0 -19 -f "$img" -o "$img.zst"
 sha256sum "$img.zst" | sed "s|$out/||" > "$img.zst.sha256"

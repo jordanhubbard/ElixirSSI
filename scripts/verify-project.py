@@ -34,13 +34,13 @@ def file_digest(path):
 def source_inventory(root):
     paths = subprocess.check_output(
         ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard',
-         '--', 'Makefile', 'os', 'scripts'], cwd=root).decode().split('\0')
+         '--', 'Makefile', 'os', 'scripts', 'command'], cwd=root).decode().split('\0')
     result = {}
     for name in sorted(set(paths) - {''}):
         path = root / name
         if path.is_symlink():
             result[name] = {'link': os.readlink(path)}
-        else:
+        elif path.exists():
             result[name] = {'identity': file_digest(path), 'executable': bool(path.stat().st_mode & 0o111)}
     if RUNNER not in result or 'Makefile' not in result:
         raise ValueError('source inventory is missing the runner or root Makefile')

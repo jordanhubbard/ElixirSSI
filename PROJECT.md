@@ -16,12 +16,20 @@ This is the durable goals record; `docs/` is subordinate to it.
 4. **Computer-scientist users.** The shell is Elixir with system commands;
    SSH reaches the same system from any node.
 5. **A compelling remote desktop.** The cluster desktop speaks RemoteOS
-   protocol v2 to RemoteOS-SDL and itself survives the loss of the node
+   protocol v2 to the Phoenix workspace and itself survives the loss of the node
    drawing it.
 
 6. **Install and run without building.** GitHub releases provide the prebuilt
    flashable SSI image and an emulator/development installer. Users can start
-   N emulated boards or flash N physical boards and reach the existing browser
-   management interface and RemoteOS desktop. Release assets carry checksums
+   N emulated boards or flash N physical boards and reach the unified Phoenix
+   workspace, including the cluster desktop. Release assets carry checksums
    and are tested through the installed path; hardware qualification remains
    explicitly separate from emulation.
+
+7. **An Elixir command node and development environment.** A supervised Elixir/OTP
+   application with Phoenix LiveView is the single interface for setup, operating
+   physical and emulated nodes, and developing, testing, evaluating and deploying
+   Elixir applications. It remains usable while the managed SSI cluster is down.
+   Elixir owns application policy and orchestration; Linux, Docker, QEMU and the
+   browser remain platform dependencies. No separate Python management application
+   defines the installed user experience.
