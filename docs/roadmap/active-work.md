@@ -290,7 +290,7 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
 - **Validation:** `make verify-update` passed all four stages: build, unit/build/image tests, 10 RP1 tests and 29 three-board CM5 checks. Unit coverage includes 18 command tests and 57 OS tests. Fresh packaged browser acceptance passed login, lifecycle, editor/tests, dependency/resource deployment, desktop input, restart persistence, physical-node registration, mobile layout and operation while the cluster is stopped. Existing-installation browser checks also exercised service migration, desktop recovery and a Hex dependency deployment. Peer survey found no open issues, reviews or other worktrees to reconcile.
 - **Boundary:** Qualification ran on macOS ARM Docker Desktop. Physical boards remain a separate hardware gate; these results do not claim Windows qualification or publish a release.
 
-### [ ] SSI-017 — Merge outstanding work and publish ElixirSSI 1.1.0
+### [x] SSI-017 — Merge outstanding work and publish ElixirSSI 1.1.0
 
 - **Priority:** P1
 - **Owner:** Release policy and command-node distribution
@@ -298,7 +298,9 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
 - **Conclusion:** Integrate the outstanding Phoenix branch through PR #4; other remote branch tips are already ancestors of main. Cut a minor release with matching OS and command-app versions and all required downloadable assets. Hosted CI is not configured. The user explicitly authorized the existing verified project and packaged-install gates for this release.
 - **Depends on:** none
 - **Implementation:**
-  - [ ] Merge all outstanding branch work and declare command-app version mirroring
-  - [ ] Prepare, qualify and publish version 1.1.0 through litai release
+  - [x] Merge all outstanding branch work and declare command-app version mirroring
+  - [x] Prepare and qualify through litai release, then publish the checked version 1.1.0 assets
 - **Evidence:**
-  - [ ] Verify exact prepared revision, packaged three-node browser acceptance and uploaded release assets
+  - [x] Verify exact prepared revision, packaged three-node browser acceptance and uploaded release assets
+
+- **Outcome:** [ElixirSSI 1.1.0](https://github.com/jordanhubbard/ElixirSSI/releases/tag/v1.1.0) is published at `766727ba9636aea25cf5ab33ae6dbfb2c1b43c6a`. All 12 assets passed full download, size and SHA-256 verification through `litai release verify-published`. The existing three-node installation was restored. The publisher’s fixed 120-second upload timeout required completing the unchanged qualified assets with `gh`; the tag was not moved. Main advances to 1.2.0 for development.
