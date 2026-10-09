@@ -10,6 +10,13 @@
   },
   "version_mirrors": [
     {
+      "path": "command/version.json",
+      "format": "json-pointer",
+      "selectors": [
+        "/version"
+      ]
+    },
+    {
       "path": "os/ssi/version.json",
       "format": "json-pointer",
       "selectors": [

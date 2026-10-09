@@ -289,3 +289,16 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
 - **Plan:** [Command-node architecture](../architecture/command-node.md)
 - **Validation:** `make verify-update` passed all four stages: build, unit/build/image tests, 10 RP1 tests and 29 three-board CM5 checks. Unit coverage includes 18 command tests and 57 OS tests. Fresh packaged browser acceptance passed login, lifecycle, editor/tests, dependency/resource deployment, desktop input, restart persistence, physical-node registration, mobile layout and operation while the cluster is stopped. Existing-installation browser checks also exercised service migration, desktop recovery and a Hex dependency deployment. Peer survey found no open issues, reviews or other worktrees to reconcile.
 - **Boundary:** Qualification ran on macOS ARM Docker Desktop. Physical boards remain a separate hardware gate; these results do not claim Windows qualification or publish a release.
+
+### [ ] SSI-017 — Merge outstanding work and publish ElixirSSI 1.1.0
+
+- **Priority:** P1
+- **Owner:** Release policy and command-node distribution
+- **Direction:** Commit and push, merge all branches, and create a new release.
+- **Conclusion:** Integrate the outstanding Phoenix branch through PR #4; other remote branch tips are already ancestors of main. Cut a minor release with matching OS and command-app versions and all required downloadable assets. Hosted CI is not configured; the requested workflow exception remains pending.
+- **Depends on:** none
+- **Implementation:**
+  - [ ] Merge all outstanding branch work and declare command-app version mirroring
+  - [ ] Prepare, qualify and publish version 1.1.0 through litai release
+- **Evidence:**
+  - [ ] Verify exact prepared revision, packaged three-node browser acceptance and uploaded release assets

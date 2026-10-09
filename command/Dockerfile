@@ -2,7 +2,7 @@ FROM elixirssi-builder:otp29.1.1-ex1.20.4 AS build
 ENV HEX_OFFLINE=0 MIX_ENV=prod HEX_HTTP_TIMEOUT=120 HEX_HTTP_CONCURRENCY=2
 WORKDIR /command
 RUN mix local.hex --force
-COPY mix.exs mix.lock ./
+COPY mix.exs mix.lock version.json ./
 COPY config config
 RUN mix deps.get --only prod && mix deps.compile
 COPY lib lib

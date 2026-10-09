@@ -1,10 +1,16 @@
 defmodule ElixirSSI.Command.MixProject do
   use Mix.Project
 
+  @version __DIR__
+           |> Path.join("version.json")
+           |> File.read!()
+           |> JSON.decode!()
+           |> Map.fetch!("version")
+
   def project do
     [
       app: :ssi_command,
-      version: "1.0.0",
+      version: @version,
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
