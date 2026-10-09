@@ -30,6 +30,12 @@ that behaves like one machine. See the [architecture](../architecture/elixirssi.
   install `gcc-aarch64-linux-gnu` and `qemu-user-static` (binfmt for the arm64
   builder image); VMs then run emulated and several times slower.
 - About 15 GB of disk for the kernel tree and builds.
+- On Windows, use a WSL2 Linux shell with Docker Desktop's WSL integration
+  enabled and Linux containers selected. Install `make`, `git`, `python3`,
+  `curl`, and `bash` in WSL. Run the same Make commands from that shell;
+  WSL2 and macOS automatically use Docker for both kernel and emulator builds.
+  Other Linux hosts can select this path with
+  `make KERNEL_DOCKER=1 EMULATOR_DOCKER=1`.
 - For the desktop: [RemoteOS-SDL](https://github.com/jordanhubbard/RemoteOS-SDL)
   built on the workstation that will show it.
 
@@ -61,9 +67,13 @@ and compile afresh. `make JOBS=6` limits kernel compiler concurrency; by default
 uses its available CPUs. Linux can opt into this same path with
 `make KERNEL_DOCKER=1`. `make test` and `make image-cm5` also use Docker.
 
-On macOS, `run`, `cluster`, `emulator`, `test-emulator` and `test-cm5` use a
+On macOS and Windows/WSL2, `run`, `cluster`, `emulator`, `test-emulator` and `test-cm5` use a
 Linux emulator container. Emulator sources and cards live in per-checkout Docker
-volumes (`elixirssi-emulator-*` and `elixirssi-cards-*`). The full CM5 model uses
+volumes (`elixirssi-emulator-*` and `elixirssi-cards-*`), mounted at `/emulator`
+and `/cards` independently of the host source bind at `/os`. The container
+checks these mounts before writing; acceptance cards live under `/cards/tests`
+and interactive cards remain in `/cards`. Existing named volumes are reused.
+The full CM5 model uses
 CPU emulation; KVM acceleration applies only to the explicit Linux `virt` shortcut.
 The advanced `test-monitor`, `test-cluster`, `test-desktop`, `run-virt` and
 `cluster-virt` commands still require Linux host tools.

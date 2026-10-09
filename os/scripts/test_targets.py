@@ -2,6 +2,7 @@
 """Check Make dispatch, cleanup safety and emulator image selection without Docker."""
 import importlib.machinery
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -56,8 +57,106 @@ class TargetTests(unittest.TestCase):
             self.assertTrue(all(port.startswith("127.0.0.1:") for port in ports))
             self.assertIn("127.0.0.1:8182:8182", ports)
             self.assertIn(f"{root.resolve()}:/os", args)
-            self.assertTrue(any(arg.endswith(":/os/build/emulator") for arg in args))
-            self.assertTrue(any(arg.endswith(":/os/build/cm5emu") for arg in args))
+            self.assertTrue(any(arg.endswith(":/emulator") for arg in args))
+            self.assertTrue(any(arg.endswith(":/cards") for arg in args))
+            self.assertFalse(any(":/os/build/" in arg for arg in args))
+            self.assertIn("SSI_EMULATOR_DIR=/emulator", args)
+            self.assertIn("SSI_EMULATOR=/emulator/current/build/qemu-system-aarch64", args)
+            self.assertIn("SSI_CM5_STATE_DIR=/cards", args)
+
+    def test_acceptance_uses_configured_card_volume(self):
+        import test_cluster as harness
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, SSI_CM5_STATE_DIR=temp):
+            with patch.object(harness, "CLUSTER"), patch.object(harness, "QEMU"), \
+                 patch.object(harness, "BOOT_TIMEOUT"):
+                interactive = Path(temp) / "node1-original.img"
+                interactive.write_text("keep")
+                harness.use_cm5()
+                self.assertEqual(harness.CLUSTER, str(Path(temp) / "tests"))
+                self.assertEqual(os.environ["SSI_CM5_STATE_DIR"], harness.CLUSTER)
+                Path(harness.CLUSTER).mkdir()
+                test_card = Path(harness.CLUSTER) / "node1-test.img"
+                test_card.write_text("discard")
+                harness.reset_node(1)
+                self.assertFalse(test_card.exists())
+                self.assertEqual(interactive.read_text(), "keep")
+
+    def test_docker_build_uses_independent_volume_and_mount_guard(self):
+        with tempfile.TemporaryDirectory(prefix="cm5 build ") as temp:
+            root = Path(temp)
+            (root / "scripts").mkdir()
+            (root / "toolchain").mkdir()
+            shutil.copy(OS / "scripts/docker-emulator.sh", root / "scripts")
+            dockerfile = root / "toolchain/emulator.Dockerfile"
+            shutil.copy(OS / "toolchain/emulator.Dockerfile", dockerfile)
+            digest = hashlib.sha256(dockerfile.read_bytes()).hexdigest()
+            docker = root / "docker"
+            docker.write_text(f"#!{sys.executable}\nimport json,sys\n"
+                              f"print({digest!r} if sys.argv[1:3] == ['image', 'inspect'] else json.dumps(sys.argv[1:]))\n")
+            docker.chmod(0o755)
+            result = subprocess.run(["bash", str(root / "scripts/docker-emulator.sh"), "build"],
+                                    env=dict(os.environ, PATH=f"{root}:{os.environ['PATH']}"),
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            args = json.loads(result.stdout)
+            self.assertEqual(args[0], "run")
+            self.assertTrue(any(arg.endswith(":/emulator") for arg in args))
+            self.assertFalse(any(":/os/build/" in arg for arg in args))
+            self.assertIn("scripts/docker-emulator-entry.sh", args)
+            self.assertIn("SSI_EMULATOR_DIR=/emulator", args)
+
+    def test_launcher_routes_boot_script_and_binary_to_emulator_volume(self):
+        loader = importlib.machinery.SourceFileLoader("ssi_cm5_volume_test", str(OS / "scripts/ssi-cm5"))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        module = importlib.util.module_from_spec(spec)
+        with patch.dict(os.environ, SSI_EMULATOR_DIR="/emulator",
+                        SSI_EMULATOR="/emulator/current/build/qemu-system-aarch64", SSI_CM5_STATE_DIR="/cards"):
+            loader.exec_module(module)
+        self.assertEqual(module.BOOT, "/emulator/current/scripts/rpi5-boot")
+        self.assertEqual(module.QEMU, "/emulator/current/build/qemu-system-aarch64")
+        self.assertEqual(module.DIR, "/cards")
+
+    def test_container_entry_rejects_missing_mount_and_preserves_cards(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            state = root / "cards"
+            (state / "tests").mkdir(parents=True)
+            for directory in (state, state / "tests"):
+                for suffix in (".pid", ".sock", ".mon", "-image.img"):
+                    (directory / ("node1" + suffix)).write_text("keep until mounted")
+            mountpoint = root / "mountpoint"
+            mountpoint.write_text('#!/bin/sh\n[ "$2" != "$MISSING_MOUNT" ]\n')
+            mountpoint.chmod(0o755)
+            marker = root / "executed"
+            env = dict(os.environ, PATH=f"{root}:{os.environ['PATH']}",
+                       SSI_EMULATOR_DIR="/emulator", SSI_CM5_STATE_DIR=str(state))
+            command = ["sh", str(OS / "scripts/docker-emulator-entry.sh"), "touch", str(marker)]
+            for missing in ("/emulator", str(state)):
+                result = subprocess.run(command, env=dict(env, MISSING_MOUNT=missing), capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(marker.exists())
+                self.assertTrue((state / "node1.pid").exists())
+            subprocess.run(command, env=dict(env, MISSING_MOUNT=""), check=True)
+            self.assertTrue(marker.exists())
+            for directory in (state, state / "tests"):
+                self.assertEqual(list(directory.glob("node*")), [directory / "node1-image.img"])
+
+    def test_wsl_selects_docker(self):
+        with tempfile.TemporaryDirectory() as temp:
+            uname = Path(temp) / "uname"
+            uname.write_text('#!/bin/sh\ncase "$1" in -s) echo Linux;; -r) echo 6.6.87.2-microsoft-standard-WSL2;; -m) echo x86_64;; esac\n')
+            uname.chmod(0o755)
+            result = subprocess.run(["make", "-n", "emulator", "kernel"], cwd=OS,
+                                    env=dict(os.environ, PATH=f"{temp}:{os.environ['PATH']}"),
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("bash scripts/docker-emulator.sh build", result.stdout)
+            # Force the kernel target stale to exercise its selected recipe.
+            result = subprocess.run(["make", "-n", "-W", "scripts/docker-kernel.sh", "kernel"], cwd=OS,
+                                    env=dict(os.environ, PATH=f"{temp}:{os.environ['PATH']}"),
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("sh scripts/docker-kernel.sh", result.stdout)
 
     def dry_run(self, target):
         result = subprocess.run(

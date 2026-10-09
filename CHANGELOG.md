@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- ElixirSSI: keep Docker Desktop emulator sources and cards on independent
+  Linux volume mounts, check mounts before use, and select Docker builds under
+  Windows/WSL2 as well as macOS.
 - ElixirSSI: fix fresh-checkout Docker kernel builds failing to export
   `modules.tar` when `os/build/` does not exist; cover export directory creation
   independently of verification setup.

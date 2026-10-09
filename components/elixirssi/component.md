@@ -226,6 +226,11 @@ without compiling the OS or emulator; physical qualification stays explicit.
 
 ## Emulated hardware
 
+- Docker Desktop on macOS and Windows (through WSL2 with Linux containers)
+  MUST support image build and CM5 emulator tests. Emulator sources and card
+  state MUST stay on case-sensitive Linux volumes mounted outside the host
+  source bind. Missing volume mounts MUST fail before writing state; tests
+  MUST keep disposable cards separate from interactive cards.
 - `make emulator` builds a QEMU with a `raspi-cm5` machine. It extends the
   pinned rpi5_machine BCM2712 model with an RP1 south bridge (PCI function and
   MSI-X translation, clocks, GPIO, UART0-5, Gigabit Ethernet, two USB hosts)

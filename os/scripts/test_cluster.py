@@ -119,7 +119,7 @@ def use_cm5():
     """Run every node as an emulated CM5 board (scripts/ssi-cm5)."""
     global CLUSTER, QEMU, BOOT_TIMEOUT
     # Acceptance tests reflash cards; keep them separate from interactive state.
-    CLUSTER = os.path.join(OS, "build", "cm5emu", "tests")
+    CLUSTER = os.path.join(os.environ.get("SSI_CM5_STATE_DIR", os.path.join(OS, "build", "cm5emu")), "tests")
     os.environ["SSI_CM5_STATE_DIR"] = CLUSTER
     QEMU = os.path.join(OS, "scripts", "ssi-cm5")
     BOOT_TIMEOUT = 300

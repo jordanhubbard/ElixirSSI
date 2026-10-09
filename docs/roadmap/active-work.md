@@ -250,7 +250,7 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
 - **Service recovery:** `service.ex` places each named GenServer using rendezvous hashing or an explicit pin. On node loss a surviving owner starts a new process from application checkpoints; explicit move checkpoints/stops/starts the service. This is application-state recovery, not migration of a process heap, mailbox or instruction pointer. Service placement is not CPU-load-sensitive, and ordinary Kernel.spawn processes are not automatically distributed or recovered. The task coordinator is local to its caller and is not itself replicated.
 - **Fault-tolerance boundaries:** Retried tasks can repeat side effects. State since the last checkpoint can be lost. `store.ex` uses a last-writer-wins CRDT and attempts synchronous replication to connected peers, but does not reject failed multicall results; this is not consensus-backed durability. Roster fencing is enabled by default at three members; two-member partitions favor availability and may run duplicate services. Fencing is membership-based, not lease-based, so strict instantaneous singleton guarantees are not claimed.
 
-### [ ] SSI-014 — Build from an absent output directory
+### [x] SSI-014 — Build from an absent output directory
 
 - **Priority:** P1
 - **Owner:** ElixirSSI component and kernel build tooling
@@ -263,4 +263,18 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
 - **Evidence:**
   - [x] Regression fails before the fix and passes after it — KernelExportTests reproduces the missing modules.tar parent on the original script; passes after directory creation. Eight target tests, four verification-runner tests and two installer tests also pass.
   - [x] Plain make build succeeds from absent os/build on macOS Docker — Apple Make completed the kernel export, runtime, initramfs and CM5 image (2026-10-08).
-  - [ ] Complete full project verification: make verify-update passed build and test (49 Elixir tests, 13 build/target checks, 27 image checks), then emulator source preparation failed with Git reporting an unavailable current working directory during the pinned base fetch. A standalone make test-emulator retry reproduced it. The prior receipt was invalidated; three-board acceptance was not run. Next action: diagnose the emulator fetch failure on this host, rerun make verify-update, and publish a receipt only after all stages pass (2026-10-08).
+  - [x] Complete full project verification — the original kernel export fix passes the full suite after the independent Docker Desktop mount repair in SSI-015. Fresh receipts are in verification/current.json and verification/system-image.json (2026-10-08).
+
+### [x] SSI-015 — Keep Docker Desktop emulator state on Linux volumes
+
+- **Priority:** P1
+- **Owner:** ElixirSSI build and emulator tooling
+- **Direction:** Fix the Docker Desktop blocker for supported macOS and Windows configurations.
+- **Conclusion:** Nested emulator and card volumes beneath the host source bind can resolve to the host filesystem on Docker Desktop. Mount Linux state independently, route all consumers through explicit paths, and verify the actual filesystem before preparing sources or cards.
+- **Depends on:** none
+- **Implementation:**
+  - [x] Use independent emulator and card mounts with explicit paths throughout build and acceptance — retain volume names, guard mounts before writes, route boot helpers and test cards, and auto-select Docker on Windows/WSL2.
+  - [x] Cover Docker Desktop transport and path routing with regressions and document supported host invocation.
+- **Evidence:**
+  - [x] Regression tests exercise independent mounts and test-card isolation — 13 target checks include both Docker paths, missing-mount rejection before cleanup, boot-helper routing, card isolation and simulated WSL2 detection.
+  - [x] Build and full verification succeed on macOS Docker Desktop; report Windows qualification accurately — make verify-update passed all four stages: 49 Elixir tests, 18 build/target checks, 27 image checks, 10 RP1 tests and 29/29 three-board CM5 checks (service failover 9.3 seconds). Both /emulator and /cards were confirmed on Linux ext4. Current source and image identities are bound in verification/system-image.json and verification/current.json. Source-intelligence and HTML-observability remain explicitly unconfigured. Windows/WSL2 selection and transport are regression-tested; no Windows host was available for an end-to-end run (2026-10-08).

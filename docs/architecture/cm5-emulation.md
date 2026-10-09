@@ -60,8 +60,12 @@ flowchart LR
 ```
 
 `make run` starts one board and `make cluster N=3` starts three, using
-`scripts/ssi-cm5`. On macOS these commands run inside a Linux Docker container;
-source caches and card state use Docker volumes and management ports are
+`scripts/ssi-cm5`. On macOS and Windows through WSL2 these commands run inside
+a Linux Docker container. Source caches and card state use independent Docker
+volume mounts at `/emulator` and `/cards`, outside the host bind at `/os`;
+the entry point rejects absent mounts before writing. `SSI_EMULATOR_DIR` routes
+both the boot helper and QEMU tree, and `SSI_CM5_STATE_DIR` routes card state
+(acceptance adds a separate `tests` directory). Management ports are
 published on localhost. Each board gets its own sparse copy of the
 image as its eMMC, keyed by the base image's content so a rebuilt image cannot
 silently reuse an old card. Older cards remain preserved. Each board has a
