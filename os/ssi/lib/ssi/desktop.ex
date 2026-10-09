@@ -36,7 +36,7 @@ defmodule SSI.Desktop do
 
   @doc "Register the desktop service targeting a RemoteOS-SDL `host:port`."
   def enable(endpoint, opts \\ []) when is_binary(endpoint) do
-    SSI.Service.register(:desktop, __MODULE__, %{endpoint: endpoint, size: opts[:size] || SSI.Config.get("desktop.size")})
+    SSI.Service.register(:desktop, __MODULE__, %{endpoint: endpoint, token: opts[:token], size: opts[:size] || SSI.Config.get("desktop.size")})
   end
 
   def disable, do: SSI.Service.unregister(:desktop)
@@ -90,6 +90,7 @@ defmodule SSI.Desktop do
 
     state = %{
       endpoint: args.endpoint,
+      token: args[:token],
       conn: nil,
       fb: nil,
       w: w,
@@ -252,7 +253,7 @@ defmodule SSI.Desktop do
   # -- connection -------------------------------------------------------------
 
   defp connect(state) do
-    with {:ok, conn} <- Remote.connect(state.endpoint),
+    with {:ok, conn} <- Remote.connect(state.endpoint, "elixirssi-desktop", state.token),
          {:ok, display, conn} <- Remote.call(conn, "display.open", %{w: state.w, h: state.h, title: "ElixirSSI cluster desktop"}),
          {:ok, tiles, conn} <- create_tiles(conn, SSI.Desktop.MandelbrotApp.tile_count(), SSI.Desktop.MandelbrotApp.tile_size()) do
       # A fresh connection has fresh surfaces: apps must upload everything again.

@@ -82,12 +82,22 @@ class ReceiptTests(unittest.TestCase):
         image.write_bytes(b'changed')
         with self.assertRaisesRegex(ValueError, 'image changed'):
             self.checked()
+
         image.write_bytes(b'image fixture')
         report = v.read_json(self.root, v.REPORT)
         report['stages'][0]['exit_code'] = 1
         v.atomic_json(self.root / v.REPORT, report)
         with self.assertRaisesRegex(ValueError, 'report identity'):
             self.checked()
+
+    def test_deleted_tracked_source_rejects_receipt_and_can_be_requalified(self):
+        subprocess.run(['git', 'add', 'os/source.ex'], cwd=self.root, check=True)
+        self.execute()
+        (self.root / 'os/source.ex').unlink()
+        with self.assertRaisesRegex(ValueError, 'source changed'):
+            self.checked()
+        self.execute()
+        self.checked()
 
     def test_source_edit_during_run_never_publishes(self):
         with self.assertRaisesRegex(ValueError, 'changed during verification'):

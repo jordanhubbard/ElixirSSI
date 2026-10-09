@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- ElixirSSI: replace installed Python management with an Elixir/OTP command
+  node and authenticated Phoenix LiveView workspace. Manage emulated instances,
+  register physical Pis, inspect processes and services, and use the cluster
+  desktop in the same browser interface.
+- ElixirSSI: create and edit Mix projects, run isolated builds, tests and
+  evaluation, and deploy runtime dependencies and resources through verified
+  SSH connections. Persist deployments across restarts and preserve node data
+  when upgrading images; invalid user deployment metadata cannot prevent boot.
+- ElixirSSI: package the command release and Elixir emulator supervisor with
+  the offline installer. Existing cards, cluster identity and projects survive
+  installation adoption.
+- ElixirSSI: derive fresh-cluster SSH identities consistently before replication
+  converges, avoiding a host-key change after restart; preserve stored legacy keys.
 - ElixirSSI: keep Docker Desktop emulator sources and cards on independent
   Linux volume mounts, check mounts before use, and select Docker builds under
   Windows/WSL2 as well as macOS.

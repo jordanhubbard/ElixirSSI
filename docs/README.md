@@ -16,6 +16,9 @@ Use [download and install](user/distribution.md) for release artifacts.
 Start with [getting started](user/getting-started.md) for installation and usage.
 See [active work](roadmap/active-work.md) for current development status.
 
+The [command-node architecture](architecture/command-node.md) defines the Elixir
+and Phoenix workspace being developed for cluster operation and application work.
+
 ## Development
 
 This project is built with [Literate AI](https://github.com/NVIDIA-dev/literate-ai).

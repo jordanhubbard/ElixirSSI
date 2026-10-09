@@ -51,6 +51,9 @@ def main():
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     runtime = 'elixirssi-runtime:' + version
     builder = 'elixirssi-builder:otp29.1.1-ex1.20.4'
+    command = 'elixirssi-command:' + version
+    run('docker', 'build', '-t', command, str(ROOT / 'command'))
+    export_image(command, OUT / 'elixirssi-command-linux-arm64.tar.gz')
     boot_config = subprocess.check_output(['docker','run','--rm','-v',f'{ROOT / "os"}:/os:ro',
         '-e','MTOOLS_SKIP_CHECK=1',builder,'mtype','-i','/os/build/cm5/elixirssi-cm5.img@@4M','::/ssi.conf'],text=True)
     if 'secret = elixirssi-insecure-default-secret' not in boot_config.splitlines():
@@ -65,8 +68,7 @@ def main():
         'cp /emulator/current/scripts/rpi5-boot /export/emulator/scripts/; '
         'cp /emulator/current/LICENSE /export/emulator/LICENSE')
     for source, name in [(DIST / 'runtime.Dockerfile', 'Dockerfile'),
-                         (DIST / 'container.py', 'container.py'),
-                         (ROOT / 'os/scripts/ssi-cm5', 'ssi-cm5')]:
+                         (DIST / 'emulator.exs', 'emulator.exs')]:
         shutil.copyfile(source, context / name)
     run('docker', 'build', '-t', runtime, str(context))
     export_image(runtime, OUT / 'elixirssi-emulator-linux-arm64.tar.gz')
@@ -79,7 +81,8 @@ def main():
     with tarfile.open(OUT / 'elixirssi-source.tar.gz', 'w:gz') as tar:
         files = subprocess.check_output(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], cwd=ROOT).decode().split('\0')
         for name in sorted(set(files) - {''}):
-            tar.add(ROOT / name, arcname=name, recursive=False)
+            if (ROOT / name).exists():
+                tar.add(ROOT / name, arcname=name, recursive=False)
     # Corresponding upstream source, including the applied emulator patches.
     run('docker', 'run', '--rm', '-v', f'elixirssi-emulator-{key}:/emulator:ro',
         '-v', f'elixirssi-kernel-{key}:/kernel:ro', '-v', f'{OUT}:/export',
@@ -87,26 +90,18 @@ def main():
         'tar -C /emulator/current --exclude=.git --exclude=build --exclude=__pycache__ '
         '-czf /export/elixirssi-emulator-source.tar.gz LICENSE scripts qemu overlay patches series; '
         'tar -C /kernel/src --exclude=.git -czf /export/elixirssi-kernel-source.tar.gz .')
-    for platform_name in ('darwin-arm64', 'linux-aarch64'):
-        name = f'remoteos-sdl-0.3.0-{platform_name}.tar.gz'
-        if not (OUT / name).exists():
-            run('gh', 'release', 'download', 'v0.3.0', '--repo', 'jordanhubbard/RemoteOS-SDL',
-                '--pattern', name, '--pattern', name + '.sha256', '--dir', str(OUT))
-        expected = (OUT / (name + '.sha256')).read_text().split()[0]
-        if digest(OUT / name) != expected:
-            raise RuntimeError('RemoteOS-SDL archive checksum mismatch')
-    shutil.copyfile(DIST / 'elixirssi.py', OUT / 'elixirssi')
-    shutil.copyfile(ROOT / 'os/ssi/priv/monitor/index.html', OUT / 'monitor.html')
-    (OUT / 'install-elixirssi.py').write_text((DIST / 'install.py').read_text().replace('@VERSION@', version))
+    shutil.copyfile(DIST / 'elixirssi.command', OUT / 'elixirssi')
+    (OUT / 'install-elixirssi.command').write_text((DIST / 'install-elixirssi.command').read_text().replace('@VERSION@', version))
+    (OUT / 'install-elixirssi.command').chmod(0o755)
     roles = {
         'image': image.name, 'emulator': 'elixirssi-emulator-linux-arm64.tar.gz',
         'development': 'elixirssi-development-linux-arm64.tar.gz', 'source': 'elixirssi-source.tar.gz',
         'emulator-source': 'elixirssi-emulator-source.tar.gz', 'kernel-source': 'elixirssi-kernel-source.tar.gz',
-        'installer': 'install-elixirssi.py', 'launcher': 'elixirssi', 'monitor': 'monitor.html',
-        'desktop-macos': 'remoteos-sdl-0.3.0-darwin-arm64.tar.gz',
-        'desktop-linux': 'remoteos-sdl-0.3.0-linux-aarch64.tar.gz',
+        'installer': 'install-elixirssi.command', 'launcher': 'elixirssi',
+        'command': 'elixirssi-command-linux-arm64.tar.gz',
     }
     installation = {'version': version, 'revision': revision, 'image': subprocess.check_output(['docker','image','inspect','--format','{{.Id}}',runtime], text=True).strip(),
+                    'command_image': subprocess.check_output(['docker','image','inspect','--format','{{.Id}}',command], text=True).strip(),
                     'builder': subprocess.check_output(['docker','image','inspect','--format','{{.Id}}',builder], text=True).strip(),
                     'assets': {role: {'name': name, 'sha256': digest(OUT / name)} for role, name in roles.items()},
                     'physical_hardware': 'Pi 5 and CM5 targeted; physical boot not yet qualified'}

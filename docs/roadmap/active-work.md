@@ -278,3 +278,14 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
 - **Evidence:**
   - [x] Regression tests exercise independent mounts and test-card isolation — 13 target checks include both Docker paths, missing-mount rejection before cleanup, boot-helper routing, card isolation and simulated WSL2 detection.
   - [x] Build and full verification succeed on macOS Docker Desktop; report Windows qualification accurately — make verify-update passed all four stages: 49 Elixir tests, 18 build/target checks, 27 image checks, 10 RP1 tests and 29/29 three-board CM5 checks (service failover 9.3 seconds). Both /emulator and /cards were confirmed on Linux ext4. Current source and image identities are bound in verification/system-image.json and verification/current.json. Source-intelligence and HTML-observability remain explicitly unconfigured. Windows/WSL2 selection and transport are regression-tested; no Windows host was available for an end-to-end run (2026-10-08).
+
+### [x] SSI-016 — Elixir command node and development workspace
+
+- **Priority:** P1
+- **Owner:** ElixirSSI command-node Component, distribution and monitor
+- **Direction:** Make command and control an Elixir/Phoenix application on the command node, with an integrated development environment for Elixir users.
+- **Delivered:** Supervised OTP/Phoenix workspace with authentication, durable settings and operation history, emulated instance lifecycle, physical Pi registration, process/service inspection, verified SSH console, project editing and isolated Mix jobs. Deployment includes runtime OTP dependencies and resources, validates transfers and restores the previous application set on activation failure. The guest desktop renders and accepts input in the same workspace.
+- **Installation:** Packaged Elixir installer and emulator supervisor replace the installed Python manager and separate SDL/monitor entrypoints. Adoption preserves existing cards, projects and cluster identity. Fresh SSH identities derive consistently before replication converges; legacy stored keys remain valid.
+- **Plan:** [Command-node architecture](../architecture/command-node.md)
+- **Validation:** `make verify-update` passed all four stages: build, unit/build/image tests, 10 RP1 tests and 29 three-board CM5 checks. Unit coverage includes 18 command tests and 57 OS tests. Fresh packaged browser acceptance passed login, lifecycle, editor/tests, dependency/resource deployment, desktop input, restart persistence, physical-node registration, mobile layout and operation while the cluster is stopped. Existing-installation browser checks also exercised service migration, desktop recovery and a Hex dependency deployment. Peer survey found no open issues, reviews or other worktrees to reconcile.
+- **Boundary:** Qualification ran on macOS ARM Docker Desktop. Physical boards remain a separate hardware gate; these results do not claim Windows qualification or publish a release.

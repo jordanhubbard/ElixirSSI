@@ -174,14 +174,18 @@ secret MUST be announced on every console and SSH login.
 - SSH is served on every member with one cluster-wide host key. Keys come from
   `/boot/authorized_keys` and the replicated map; password login is enabled
   only when configured.
+- Fresh nodes MUST derive the same SSH host key from the cluster secret and
+  name before replicated state converges. Preserve an existing stored host key
+  across upgrades so previously trusted installations retain their identity.
 - Restart and power-off stop services (so they hand off) before calling
   reboot(2). The BEAM never exits on its own, since that would panic the
   kernel.
 
 ## Desktop
 
-- The desktop is a service that speaks RemoteOS protocol v2 to a
-  RemoteOS-SDL process on the user's workstation. It renders a menu bar
+- The desktop is a service that speaks RemoteOS protocol v2 to the
+  command node's authenticated Phoenix bridge. RemoteOS-SDL remains a protocol
+  compatibility client for development tests. The desktop renders a menu bar
   naming the member drawing it, a dock, and movable windows: a Cluster
   monitor, a cluster-wide process view, a Mandelbrot renderer whose tiles are
   computed across the cluster and outlined in the colour of the computing
@@ -215,11 +219,15 @@ controls the system from outside it; both are specified in
 
 ## Distribution
 
+The [command node](../elixirssi-command/component.md) MUST provide an Elixir/OTP
+and Phoenix LiveView environment for setup, operations and Elixir development.
+Its workspace remains available independently of managed cluster health.
+
 GitHub releases MUST include the checksummed prebuilt Pi 5/CM5 image and an
 installer for the prebuilt emulator and Elixir/OTP development environment.
-The installed launcher MUST run N image copies, preserve their data, and open
-the specified browser monitor with every endpoint configured. It MUST include
-the RemoteOS desktop client and document its host runtime requirements.
+The installed launcher MUST open the Phoenix workspace, which manages N image
+copies, preserves their data and configures their endpoints. The workspace MUST
+include the cluster desktop and document its host runtime requirements.
 Installation MUST verify asset hashes and refuse to overwrite an existing
 installation. Release acceptance MUST exercise the packaged installation
 without compiling the OS or emulator; physical qualification stays explicit.
