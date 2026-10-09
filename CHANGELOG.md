@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.1.0 - 2026-10-09
+
+[README.md](https://github.com/jordanhubbard/ElixirSSI/blob/v1.1.0/README.md)
+
+- Qualification: macOS ARM Docker Desktop, three emulated CM5 nodes and the
+  fresh packaged Phoenix workflow. Physical Pi and Windows runtime qualification
+  are not claimed by this release.
 - ElixirSSI: replace installed Python management with an Elixir/OTP command
   node and authenticated Phoenix LiveView workspace. Manage emulated instances,
   register physical Pis, inspect processes and services, and use the cluster
