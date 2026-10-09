@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- ElixirSSI: fix fresh-checkout Docker kernel builds failing to export
+  `modules.tar` when `os/build/` does not exist; cover export directory creation
+  independently of verification setup.
+
 ## 1.0.0 - 2026-10-08
 
 [README.md](https://github.com/jordanhubbard/ElixirSSI/blob/v1.0.0/README.md)

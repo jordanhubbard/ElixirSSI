@@ -204,6 +204,8 @@ controls the system from outside it; both are specified in
   `ssi.conf`) and an ext4 data partition. The same image is used by emulation
   and by physical Pi 5 (SD) and CM5 boards (eMMC, or SD on CM5 Lite).
 - The repository root MUST expose `build`, `run`, `test`, and `clean`.
+  `build` MUST create its output directories in a fresh checkout without
+  requiring verification, testing, or another target to run first.
   `run` builds and boots the image in the full CM5 emulator with a serial
   console; the generic `virt` machine is an explicit `run-virt` shortcut.
   `test` runs hosted unit/peer tests, build regressions and image checks;

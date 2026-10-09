@@ -249,3 +249,18 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
 - **Process placement:** `load.ex` samples BEAM scheduler wall time and run queues once per second; score = utilization + queue length / online schedulers. `sched.ex` places spawn/run on the lowest score and interleaves parallel tasks across members up to one in-flight item per scheduler by default. Tasks are lightweight BEAM processes under each node's Task.Supervisor. Membership is reread at dispatch; monitored failed items are retried up to three times.
 - **Service recovery:** `service.ex` places each named GenServer using rendezvous hashing or an explicit pin. On node loss a surviving owner starts a new process from application checkpoints; explicit move checkpoints/stops/starts the service. This is application-state recovery, not migration of a process heap, mailbox or instruction pointer. Service placement is not CPU-load-sensitive, and ordinary Kernel.spawn processes are not automatically distributed or recovered. The task coordinator is local to its caller and is not itself replicated.
 - **Fault-tolerance boundaries:** Retried tasks can repeat side effects. State since the last checkpoint can be lost. `store.ex` uses a last-writer-wins CRDT and attempts synchronous replication to connected peers, but does not reject failed multicall results; this is not consensus-backed durability. Roster fencing is enabled by default at three members; two-member partitions favor availability and may run duplicate services. Fencing is membership-based, not lease-based, so strict instantaneous singleton guarantees are not claimed.
+
+### [ ] SSI-014 — Build from an absent output directory
+
+- **Priority:** P1
+- **Owner:** ElixirSSI component and kernel build tooling
+- **Direction:** Fix the fresh-checkout build failure, commit and push.
+- **Conclusion:** Kernel export writes modules.tar before creating os/build. Verification creates its log directory there first and masks the defect. Make export self-contained and exercise the real export script against an absent output directory.
+- **Depends on:** none
+- **Implementation:**
+  - [x] Create the export directory before writing artifacts and specify fresh-checkout behavior
+  - [x] Add a regression that executes the kernel export script with real filesystem operations
+- **Evidence:**
+  - [x] Regression fails before the fix and passes after it — KernelExportTests reproduces the missing modules.tar parent on the original script; passes after directory creation. Eight target tests, four verification-runner tests and two installer tests also pass.
+  - [x] Plain make build succeeds from absent os/build on macOS Docker — Apple Make completed the kernel export, runtime, initramfs and CM5 image (2026-10-08).
+  - [ ] Complete full project verification: make verify-update passed build and test (49 Elixir tests, 13 build/target checks, 27 image checks), then emulator source preparation failed with Git reporting an unavailable current working directory during the pinned base fetch. A standalone make test-emulator retry reproduced it. The prior receipt was invalidated; three-board acceptance was not run. Next action: diagnose the emulator fetch failure on this host, rerun make verify-update, and publish a receipt only after all stages pass (2026-10-08).
