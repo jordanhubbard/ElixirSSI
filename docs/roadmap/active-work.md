@@ -295,7 +295,7 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
 - **Priority:** P1
 - **Owner:** Release policy and command-node distribution
 - **Direction:** Commit and push, merge all branches, and create a new release.
-- **Conclusion:** Integrate the outstanding Phoenix branch through PR #4; other remote branch tips are already ancestors of main. Cut a minor release with matching OS and command-app versions and all required downloadable assets. Hosted CI is not configured; the requested workflow exception remains pending.
+- **Conclusion:** Integrate the outstanding Phoenix branch through PR #4; other remote branch tips are already ancestors of main. Cut a minor release with matching OS and command-app versions and all required downloadable assets. Hosted CI is not configured. The user explicitly authorized the existing verified project and packaged-install gates for this release.
 - **Depends on:** none
 - **Implementation:**
   - [ ] Merge all outstanding branch work and declare command-app version mirroring
