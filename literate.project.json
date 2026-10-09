@@ -108,7 +108,7 @@
     "schema": "literate-ai/repository-policy@1",
     "default_branch": "main",
     "main_state": "pre-release",
-    "pre_release_version": "1.0",
+    "pre_release_version": "1.1",
     "default_component": "components/elixirssi",
     "sample_component_roots": [
       "samples"
