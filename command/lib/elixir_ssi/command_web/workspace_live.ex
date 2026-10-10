@@ -9,7 +9,8 @@ defmodule ElixirSSI.CommandWeb.WorkspaceLive do
     Projects,
     Remote,
     Nodes,
-    Desktop
+    Desktop,
+    DemoProjects
   }
 
   @impl true
@@ -25,6 +26,12 @@ defmodule ElixirSSI.CommandWeb.WorkspaceLive do
        section: "cluster",
        projects: Projects.list(),
        project: nil,
+       demo: nil,
+       demo_target: nil,
+       demo_catalog: [],
+       demo_snapshot: nil,
+       demo_selected: nil,
+       demo_busy: false,
        files: [],
        file: "",
        source: "",
@@ -35,6 +42,145 @@ defmodule ElixirSSI.CommandWeb.WorkspaceLive do
   end
 
   @impl true
+  def handle_params(params, _, socket) do
+    socket =
+      case params["section"] do
+        section when section in ~w(cluster projects console operations desktop) ->
+          assign(socket, section: section)
+
+        _ ->
+          socket
+      end
+
+    socket =
+      case params["project"] do
+        "Demos" -> socket |> assign(section: "projects", project: "Demos") |> load_demos(params)
+        nil -> socket
+        project -> socket |> assign(section: "projects") |> select_project(project)
+      end
+
+    {:noreply, socket}
+  end
+
+  defp load_demos(socket, params) do
+    target = params["target"] || List.first(socket.assigns.targets)
+    id = params["id"]
+
+    socket =
+      assign(socket,
+        demo_target: target,
+        demo_snapshot: nil,
+        demo_selected: nil,
+        demo_catalog: []
+      )
+
+    if target do
+      socket
+      |> assign(demo_busy: true, message: "Reading the Demos project from the running guest…")
+      |> start_async(:demo_sources, fn ->
+        with {:ok, catalog} <- DemoProjects.catalog(target),
+             {:ok, snapshot} <- if(id, do: DemoProjects.source(target, id), else: {:ok, nil}),
+             do: {:ok, {catalog, snapshot}}
+      end)
+    else
+      assign(socket,
+        demo_busy: false,
+        message: "Connect and trust a node in Console to open the Demos project."
+      )
+    end
+  end
+
+  defp demo_location(target, id),
+    do:
+      "/?" <>
+        URI.encode_query(
+          Enum.reject(%{project: "Demos", target: target, id: id}, fn {_, value} ->
+            is_nil(value)
+          end)
+        )
+
+  @impl true
+  def handle_async(:demo_sources, {:ok, {:ok, {catalog, snapshot}}}, socket) do
+    selected = if snapshot, do: snapshot["files"] |> Map.keys() |> Enum.sort() |> hd()
+
+    {:noreply,
+     assign(socket,
+       demo_busy: false,
+       demo_catalog: catalog,
+       demo_snapshot: snapshot,
+       demo_selected: selected,
+       message: nil
+     )}
+  end
+
+  def handle_async(:demo_sources, {:ok, error}, socket),
+    do:
+      {:noreply,
+       assign(socket, demo_busy: false, message: ElixirSSI.Command.FileSpaces.message(error))}
+
+  def handle_async(:demo_sources, {:exit, _}, socket),
+    do:
+      {:noreply,
+       assign(socket,
+         demo_busy: false,
+         message: "Source request interrupted. Check the node connection and retry."
+       )}
+
+  @impl true
+  def handle_event("demo-target", %{"target" => target}, socket),
+    do: {:noreply, push_patch(socket, to: demo_location(target, nil))}
+
+  def handle_event(
+        "demo-source-file",
+        %{"path" => path},
+        %{assigns: %{demo_snapshot: snapshot}} = socket
+      )
+      when is_map(snapshot) do
+    {:noreply,
+     if(Map.has_key?(snapshot["files"], path),
+       do: assign(socket, demo_selected: path),
+       else: socket
+     )}
+  end
+
+  def handle_event(
+        "copy-demo",
+        %{"name" => name},
+        %{assigns: %{demo_snapshot: snapshot}} = socket
+      )
+      when is_map(snapshot) do
+    case DemoProjects.copy(snapshot, name) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(projects: Projects.list())
+         |> push_patch(to: "/?" <> URI.encode_query(%{project: name}))}
+
+      error ->
+        {:noreply, assign(socket, message: ElixirSSI.Command.FileSpaces.message(error))}
+    end
+  end
+
+  def handle_event("select-project", %{"project" => "Demos"}, socket),
+    do: {:noreply, push_patch(socket, to: demo_location(socket.assigns.demo_target, nil))}
+
+  def handle_event("deploy-demo", %{"target" => target}, socket) do
+    project = socket.assigns.project
+
+    message =
+      case Operations.submit("Deploy and run desktop app #{project}", fn ->
+             DemoProjects.deploy_and_run(project, target)
+           end) do
+        {:ok, _} ->
+          "Building and deploying to all connected members. The app will open on the cluster desktop."
+
+        {:error, reason} ->
+          reason
+      end
+
+    {:noreply, assign(socket, message: message, config: Store.get())}
+  end
+
   def handle_event("navigate", %{"section" => section}, socket)
       when section in ~w(cluster projects console operations desktop) do
     {:noreply, assign(socket, :section, section)}
@@ -155,7 +301,9 @@ defmodule ElixirSSI.CommandWeb.WorkspaceLive do
     case Projects.create(name) do
       {:ok, message} ->
         {:noreply,
-         socket |> assign(projects: Projects.list(), message: message) |> select_project(name)}
+         socket
+         |> assign(projects: Projects.list(), message: message)
+         |> push_patch(to: "/?" <> URI.encode_query(%{project: name}))}
 
       {:error, message} ->
         {:noreply, assign(socket, :message, message)}
@@ -163,7 +311,7 @@ defmodule ElixirSSI.CommandWeb.WorkspaceLive do
   end
 
   def handle_event("select-project", %{"project" => project}, socket),
-    do: {:noreply, select_project(socket, project)}
+    do: {:noreply, push_patch(socket, to: "/?" <> URI.encode_query(%{project: project}))}
 
   def handle_event("open-file", %{"file" => file}, socket) do
     case Projects.read(socket.assigns.project, file) do
@@ -261,8 +409,30 @@ defmodule ElixirSSI.CommandWeb.WorkspaceLive do
 
   defp select_project(socket, project) do
     case Projects.files(project) do
-      {:ok, files} -> assign(socket, project: project, files: files, file: "", source: "")
-      {:error, message} -> assign(socket, :message, message)
+      {:ok, files} ->
+        demo =
+          case DemoProjects.metadata(project) do
+            {:ok, data} -> data
+            _ -> nil
+          end
+
+        socket = assign(socket, project: project, files: files, file: "", source: "", demo: demo)
+
+        file =
+          if demo,
+            do:
+              Enum.find(
+                files,
+                &(String.starts_with?(&1, "lib/") and String.ends_with?(&1, "_app.ex"))
+              )
+
+        case file && Projects.read(project, file) do
+          {:ok, source} -> assign(socket, file: file, source: source)
+          _ -> socket
+        end
+
+      {:error, message} ->
+        assign(socket, :message, message)
     end
   end
 
@@ -330,6 +500,7 @@ defmodule ElixirSSI.CommandWeb.WorkspaceLive do
           >
             {label}
           </button>
+          <a href="/files">Files</a>
         </nav>
         <p class="aside-note">Elixir, across every node.</p>
         <form method="post" action="/session">
@@ -348,6 +519,15 @@ defmodule ElixirSSI.CommandWeb.WorkspaceLive do
         <p :if={@message} class="notice" role="status">{@message}</p>
         <section :if={@section == "desktop"} class="panel">
           <h2>Cluster desktop</h2>
+          <div class="actions">
+            <a
+              :for={demo <- ~w(cluster processes mandelbrot shell)}
+              class="file-link"
+              href={demo_location(nil, demo)}
+            >
+              {String.capitalize(demo)} · Open source
+            </a>
+          </div>
           <p>
             The cluster owns these applications and windows. Click the desktop to use its keyboard and mouse.
           </p>
@@ -500,7 +680,15 @@ defmodule ElixirSSI.CommandWeb.WorkspaceLive do
             </label>
             <button>Create project</button>
           </form>
-          <div class="actions">
+          <div class="actions" aria-label="Projects">
+            <button
+              phx-click="select-project"
+              phx-value-project="Demos"
+              class="quiet"
+              aria-pressed={to_string(@project == "Demos")}
+            >
+              Demos
+            </button>
             <button
               :for={project <- @projects}
               phx-click="select-project"
@@ -510,8 +698,90 @@ defmodule ElixirSSI.CommandWeb.WorkspaceLive do
               {project}
             </button>
           </div>
-          <div :if={@project} class="editor-workspace">
+          <div :if={@project == "Demos"} id="demos-project">
+            <h2>Demos <span class="pill">Built-in project</span></h2>
+            <p>Explore the running desktop applications. Copy a demo to make it your own.</p>
+            <section class="panel">
+              <form :if={@targets != []} id="demo-target" phx-submit="demo-target" class="fields">
+                <label>
+                  Connect through<select name="target"><option
+                      :for={target <- @targets}
+                      value={target}
+                      selected={target == @demo_target}
+                    >{target}</option></select>
+                </label>
+                <button disabled={@demo_busy}>Read guest sources</button>
+              </form>
+              <p>
+                The source comes from the node hosting the desktop service. Each snapshot is checked against that build's compiled modules and source hashes.
+              </p>
+              <div class="member-grid">
+                <article :for={demo <- @demo_catalog} class="member">
+                  <h2>{demo["title"]}</h2>
+                  <p>{demo["module"]}</p>
+                  <p>Guest {demo["version"]} · {demo["node"]}</p>
+                  <.link
+                    :if={demo["matches_running"]}
+                    class="file-link"
+                    patch={demo_location(@demo_target, demo["id"])}
+                  >
+                    Open source
+                  </.link>
+                  <p :if={not demo["matches_running"]}>
+                    Running code differs from this build's source snapshot.
+                  </p>
+                </article>
+              </div>
+            </section>
+            <section :if={@demo_snapshot} class="panel" id="demo-source">
+              <h2>{@demo_snapshot["module"]}</h2>
+              <p>Guest version {@demo_snapshot["version"]} on {@demo_snapshot["node"]}</p>
+              <details>
+                <summary>Source identity</summary>
+                <p>Source SHA-256: {@demo_snapshot["source_sha256"]}</p>
+                <p>Compiled module identity: {@demo_snapshot["beam_md5"]}</p>
+              </details>
+              <div class="editor-grid">
+                <nav aria-label="Demo source files">
+                  <button
+                    :for={path <- Map.keys(@demo_snapshot["files"]) |> Enum.sort()}
+                    phx-click="demo-source-file"
+                    phx-value-path={path}
+                  >
+                    {path}
+                  </button>
+                </nav>
+                <div>
+                  <label>
+                    {@demo_selected}<textarea readonly rows="24" spellcheck="false">{@demo_snapshot["files"][@demo_selected]}</textarea>
+                  </label>
+                  <p>File SHA-256: {@demo_snapshot["hashes"][@demo_selected]}</p>
+                </div>
+              </div>
+              <form id="copy-demo" phx-submit="copy-demo" class="fields">
+                <label>
+                  New project name<input
+                    name="name"
+                    required
+                    pattern="[a-z][a-z0-9_]*"
+                    placeholder={"my_" <> @demo_snapshot["id"]}
+                  />
+                </label>
+                <button>Copy to editable project</button>
+              </form>
+              <p>
+                The copy uses its own module names and retains these original sources. Edit, compile and test in Projects, then deploy and run it alongside the built-in demo.
+              </p>
+            </section>
+          </div>
+          <div :if={@project && @project != "Demos"} class="editor-workspace">
             <h2>{@project}</h2>
+            <a
+              class="file-link"
+              href={"/files?" <> URI.encode_query(%{space: "project:" <> @project})}
+            >
+              Manage project files, upload and download
+            </a>
             <div class="actions">
               <button
                 :for={action <- ~w(test format compile dependencies)}
@@ -557,6 +827,18 @@ defmodule ElixirSSI.CommandWeb.WorkspaceLive do
               <button>Evaluate in project</button>
             </form>
             <h2>Deploy to the SSI</h2>
+            <form :if={@demo && @targets != []} id="deploy-demo" phx-submit="deploy-demo">
+              <h3>Run this desktop application</h3>
+              <p>
+                Installs on every currently connected cluster member, then opens or restarts this project's window. The built-in demo remains available.
+              </p>
+              <label>
+                Connect through<select name="target"><option :for={target <- @targets} value={target}>{target}</option></select>
+              </label>
+              <button data-confirm="Build and deploy this project to every connected cluster node, then run it on the desktop?">
+                Deploy and run desktop app
+              </button>
+            </form>
             <p :if={@targets == []}>Connect and trust a node in Console to enable deployment.</p>
             <form :if={@targets != []} phx-submit="deploy" id="deploy">
               <label>

@@ -29,6 +29,14 @@ substrate `os/substrate`, kernel fragment `os/kernel`, image tooling
 `os/scripts`). The design rationale is in
 [docs/architecture/elixirssi.md](../../docs/architecture/elixirssi.md).
 
+Authenticated command-node file access MUST expose shared cluster files and
+node-local files as distinct locations. Transfers MUST be bounded, chunked and
+verified by content hash. Writes and deletion MUST check the destination identity
+observed by the operator, report stale inputs and preserve existing files on
+transfer failure. Node-local access MUST reject symlink traversal and special
+devices. Upload state MUST be bounded and expire. These operations supplement
+the SSI.FS namespace and use existing verified SSH authentication.
+
 ## Project verification
 
 The repository MUST provide `make verify-update` to build the CM5 image and run

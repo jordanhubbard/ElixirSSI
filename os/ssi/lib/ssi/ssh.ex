@@ -68,7 +68,7 @@ defmodule SSI.SSH do
       task = Task.Supervisor.async_nolink(SSI.TaskSup, fn ->
         try do
           {value, _} = Code.eval_string(source, [], file: "ssh")
-          {:ok, inspect(value, limit: 100, printable_limit: 65_536)}
+          {:ok, inspect(value, limit: 100, printable_limit: 262_144)}
         rescue
           error -> {:error, Exception.message(error)}
         catch

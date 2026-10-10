@@ -57,6 +57,42 @@ defmodule SSI.DeployTest do
     SSI.Deploy.finish_upload(id)
   end
 
+  test "adding, repeating and rolling back a deployment preserves unrelated running applications" do
+    suffix = System.unique_integer([:positive])
+    name = "running_demo_#{suffix}"
+    app = String.to_atom(name)
+    module = Module.concat(["RunningDemo#{suffix}"])
+    [{^module, beam}] = Code.compile_string("""
+    defmodule #{inspect(module)} do
+      use Application
+      def start(_, _), do: Agent.start_link(fn -> 42 end, name: __MODULE__)
+    end
+    """)
+    :code.purge(module)
+    :code.delete(module)
+    spec = :io_lib.format(~c"~tp.~n", [{:application, app, [vsn: ~c"0.1.0", modules: [module],
+      applications: [:kernel, :stdlib, :elixir], mod: {module, []}]}]) |> IO.iodata_to_binary()
+    bundle = %{name <> ".app" => Base.encode64(spec), Atom.to_string(module) <> ".beam" => Base.encode64(beam)}
+    assert {:ok, _} = SSI.Deploy.install(name, bundle)
+    pid = Process.whereis(module)
+    assert is_pid(pid)
+    on_exit(fn -> Application.stop(app) end)
+
+    other = "other_demo_#{suffix}"
+    other_app = String.to_atom(other)
+    other_spec = fn deps ->
+      :io_lib.format(~c"~tp.~n", [{:application, other_app, [vsn: ~c"0.1.0", modules: [], applications: deps]}])
+      |> IO.iodata_to_binary() |> Base.encode64()
+    end
+    assert {:ok, _} = transfer(%{other => %{"ebin/#{other}.app" => other_spec.([:kernel, :stdlib])}})
+    assert Process.whereis(module) == pid
+    assert {:ok, _} = SSI.Deploy.install(name, bundle)
+    assert Process.whereis(module) == pid
+    assert {:error, _} = transfer(%{other => %{"ebin/#{other}.app" => other_spec.([:missing_demo_dependency])}})
+    assert Process.whereis(module) == pid
+    assert Agent.get(pid, & &1) == 42
+  end
+
   test "corrupt deployment metadata and missing artifacts cannot prevent boot" do
     dir = Path.join(System.tmp_dir!(), "deploy-recovery-#{System.unique_integer([:positive])}")
     old = Application.get_env(:ssi, :data_dir)

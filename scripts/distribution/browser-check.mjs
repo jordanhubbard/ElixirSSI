@@ -1,6 +1,7 @@
 import {createRequire} from 'node:module';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
+import {checkWorkspaceFeatures} from './workspace-features-check.mjs';
 const [modules, prefix, output, manager] = process.argv.slice(2);
 const require = createRequire(path.resolve(modules, 'package.json'));
 const {chromium} = require('playwright-core');
@@ -8,9 +9,12 @@ const port = process.env.SSI_COMMAND_PORT || '4100';
 const desktopPort = process.env.SSI_DESKTOP_PORT || '4110';
 const rpc = source => execFileSync('docker', ['exec', manager, '/command/bin/ssi_command', 'rpc', source], {encoding:'utf8'}).trim();
 const browser = await chromium.launch({headless:true, executablePath:process.env.SSI_CHROME || (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : chromium.executablePath())});
+let page;
 try {
-  const page = await browser.newPage({viewport:{width:1440,height:1000}});
-  const errors = []; page.on('pageerror', e => errors.push(e.message)); page.on('dialog', d => d.accept());
+  page = await browser.newPage({viewport:{width:1440,height:1000}});
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  page.on('console', message => {if(message.type()==='error') errors.push(`${message.text()} (${message.location().url.split('#')[0]})`);});
+  page.on('requestfailed', request => {if(request.failure()?.errorText !== 'net::ERR_ABORTED') errors.push(`${request.method()} ${request.url().split('#')[0]}: ${request.failure()?.errorText}`);}); page.on('dialog', d => d.accept());
   await page.goto(`http://localhost:${port}/`);
   if (!page.url().endsWith('/login')) throw new Error('Unauthenticated workspace was accessible');
   const ticket = rpc('IO.write(ElixirSSI.Command.Auth.ticket())');
@@ -70,6 +74,7 @@ try {
   if (!shell.includes('desktop_input_verified')) throw new Error('Missing desktop result');
   await nav('Desktop'); await page.waitForFunction(() => document.querySelector('.desktop-status')?.textContent.startsWith('Connected'));
   await page.screenshot({path:path.join(output,'installed-workspace.png'),fullPage:true});
+  const workspace = await checkWorkspaceFeatures({page,port,prefix,output,rpc,nav,result,evaluate});
   await nav('Cluster'); await page.getByRole('button',{name:'Restart',exact:true}).click(); await result('Instances: restart');
   try {await check();} catch (error) {
     // Diagnose readiness versus identity drift without exposing credentials.
@@ -77,6 +82,24 @@ try {
     console.error(rpc('saved = File.read!(Path.join(ElixirSSI.Command.Store.directory(), "ssh-credentials.json")) |> Jason.decode!(); case ElixirSSI.Command.Remote.probe("host.docker.internal", 2321) do {:ok, fingerprint} -> IO.inspect({:restart_identity_matches, fingerprint == saved["host.docker.internal|2321"]["fingerprint"]}); other -> IO.inspect(other) end; IO.inspect(ElixirSSI.Command.Remote.evaluate("host.docker.internal|2321", ":restart_ssh_ready"))'));
     throw error;
   }
+  await page.goto('about:blank');
+  execFileSync('docker', ['restart', manager], {stdio:'pipe'});
+  let managerReady=false;
+  for(let attempt=0;attempt<60;attempt++) {
+    try {managerReady=(await fetch(`http://localhost:${port}/login`)).ok;} catch {}
+    if(managerReady) break;
+    await new Promise(resolve=>setTimeout(resolve,500));
+  }
+  if(!managerReady) throw new Error('Command node did not restart');
+  await page.goto(`http://localhost:${port}/`); await page.waitForSelector('.phx-connected');
+  await evaluate('unless AcceptanceMandelbrot.App.title() == \"My revised Mandelbrot\", do: raise(\"demo deployment did not persist\"); :demo_persistence_verified');
+  await page.goto(`http://localhost:${port}/files?${new URLSearchParams({space:workspace.linkSpace})}`);
+  await page.waitForSelector('.phx-connected');
+  await page.waitForFunction(() => !document.querySelector('.file-controls')?.disabled, null, {timeout:120000});
+  await page.getByRole('button',{name:'Synchronize…',exact:true}).click();
+  await page.getByText('Previous folder pairs',{exact:true}).click();
+  await page.getByRole('button',{name:'Compare again',exact:true}).waitFor({timeout:60000});
+  await page.goto(`http://localhost:${port}/`); await page.waitForSelector('.phx-connected');
   await nav('Cluster'); await page.locator('#physical-node [name=endpoint]').fill('http://127.0.0.1:9');
   await page.getByRole('button',{name:'Connect Pi',exact:true}).click();
   const physical = page.locator('.member').filter({hasText:'http://127.0.0.1:9'}); await physical.waitFor();
@@ -86,6 +109,14 @@ try {
   await page.getByRole('button',{name:'Stop',exact:true}).click(); await result('Instances: stop');
   await page.reload(); await page.waitForSelector('.phx-connected');
   await nav('Projects'); await page.getByRole('button',{name:'acceptance_app',exact:true}).waitFor();
+  await page.goto(`http://localhost:${port}/files?${new URLSearchParams({space:workspace.cluster})}`);
+  await page.waitForSelector('.phx-connected');
+  await page.locator('.notice[role=status]').filter({hasText:/failed|unavailable|timed out|refused|closed/i}).waitFor({timeout:60000});
+  await page.goto(`http://localhost:${port}/files?${new URLSearchParams({space:'project:acceptance_app'})}`);
+  await page.waitForSelector('.phx-connected'); await page.getByRole('button',{name:'Folder · assets',exact:true}).waitFor();
   if (errors.length) throw new Error(errors.join('\n'));
   console.log('PASS: packaged Phoenix lifecycle, IDE, deployment, desktop, persistence and offline workspace');
+} catch (error) {
+  if(page) await page.screenshot({path:path.join(output,'installed-failure.png'),fullPage:true}).catch(()=>{});
+  throw error;
 } finally {await browser.close();}

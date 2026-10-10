@@ -37,7 +37,12 @@ def main():
                       'checks': ['offline-elixir-install', 'phoenix-authentication', 'three-board-membership',
                                  'project-edit-test-dependency-deploy', 'browser-desktop-input',
                                  'deployment-restart-persistence', 'stopped-cluster-workspace',
-                                 'physical-node-registration', 'mobile-layout'],
+                                 'physical-node-registration', 'mobile-layout',
+                                 'browser-files-binary-and-project-archive',
+                                 'command-cluster-node-file-copies', 'linked-host-folder',
+                                 'sync-conflicts-stale-preview-deletions-and-baseline',
+                                 'guest-demo-source-edit-deploy-run', 'independent-demo-surfaces',
+                                 'demo-restart-persistence', 'offline-file-errors'],
                       'revision': config['revision'], 'version': config['version'],
                       'command_image': config['command_image'], 'runtime_image': config['image']}
             report_path = OUT / 'installed-check.json'
@@ -53,6 +58,11 @@ def main():
             manifest['identity'] = 'sha256:' + hashlib.sha256(canonical(manifest)).hexdigest()
             manifest_path.write_bytes(canonical(manifest) + b'\n')
             print('PASS: packaged Elixir installer and unified Phoenix workflow')
+        except Exception:
+            with (OUT / 'installed-command-failure.log').open('w') as log:
+                subprocess.run(['docker', 'logs', '--tail', '200', manager], stdout=log,
+                               stderr=subprocess.STDOUT, check=False)
+            raise
         finally:
             # These names derive only from this test's disposable installation.
             for container in (name, manager):

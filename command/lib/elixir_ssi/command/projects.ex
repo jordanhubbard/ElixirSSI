@@ -4,6 +4,8 @@ defmodule ElixirSSI.Command.Projects do
   @max_file 524_288
   def root, do: Path.join(Store.directory(), "projects")
 
+  def deploy_cluster(project, target, members), do: deploy(project, {target, members})
+
   def deploy(project, target) do
     with {:ok, output} <- run(project, :bundle),
          {:ok, path} <- safe_path(project, ".ssi-deployment.json"),
@@ -15,7 +17,7 @@ defmodule ElixirSSI.Command.Projects do
       with {:ok, _} <- remote_call(target, "begin_upload", [upload, hash, size]),
            :ok <- transfer(target, upload, bytes),
            {:ok, result} <- remote_call(target, "finish_upload", [upload]) do
-        {:ok, output <> "\nDeployed to #{target}:\n" <> result}
+        {:ok, output <> "\nDeployed to #{inspect(target)}:\n" <> result}
       else
         error ->
           remote_call(target, "cancel_upload", [upload])
@@ -31,8 +33,16 @@ defmodule ElixirSSI.Command.Projects do
     args =
       Enum.map_join(arguments, ", ", &inspect(&1, limit: :infinity, printable_limit: :infinity))
 
-    source =
-      "case SSI.Deploy.#{operation}(#{args}) do {:error, why} -> raise inspect(why); result -> result end"
+    {target, call} =
+      case target do
+        {endpoint, members} ->
+          {endpoint, "SSI.Desktop.Sources.deploy(#{inspect(members)}, :#{operation}, [#{args}])"}
+
+        endpoint ->
+          {endpoint, "SSI.Deploy.#{operation}(#{args})"}
+      end
+
+    source = "case #{call} do {:error, why} -> raise inspect(why); result -> result end"
 
     ElixirSSI.Command.Remote.evaluate(target, source)
   end

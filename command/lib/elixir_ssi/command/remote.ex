@@ -67,8 +67,20 @@ defmodule ElixirSSI.Command.Remote do
         :ssh.close(connection)
       end
     else
-      nil -> {:error, "Trust this node's SSH identity before executing code."}
-      _ -> {:error, "SSH authentication or host identity verification failed."}
+      nil ->
+        {:error, "Trust this node's SSH identity before executing code."}
+
+      {:error, :timeout} ->
+        {:error, "SSH connection timed out before execution. Check the node and retry."}
+
+      {:error, :econnrefused} ->
+        {:error, "SSH connection refused. Check that the node is running."}
+
+      {:error, :closed} ->
+        {:error, "SSH connection closed before execution. Check the node and retry."}
+
+      _ ->
+        {:error, "SSH authentication or host identity verification failed."}
     end
   end
 
@@ -95,7 +107,7 @@ defmodule ElixirSSI.Command.Remote do
         auth_methods: ~c"password",
         preferred_algorithms: [public_key: [:"ssh-ed25519"]]
       ],
-      5000
+      15_000
     )
   end
 

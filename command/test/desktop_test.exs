@@ -76,4 +76,29 @@ defmodule ElixirSSI.Command.DesktopTest do
     assert %{connected: false} = Desktop.frame()
     assert {:error, _} = request(session, "event.poll", %{})
   end
+
+  test "independent demo surfaces can coexist and destroyed handles do not collide" do
+    session = make_ref()
+    token = GenServer.call(Desktop, :token)
+    assert {:ok, _} = request(session, "hello", %{"protocol" => 2, "token" => token})
+    assert {:ok, _} = request(session, "display.open", %{"w" => 1280, "h" => 800})
+
+    handles =
+      for _ <- 1..192 do
+        assert {:ok, %{handle: handle}} =
+                 request(session, "surface.create", %{"w" => 50, "h" => 50})
+
+        handle
+      end
+
+    assert Enum.uniq(handles) == handles
+    assert {:ok, _} = request(session, "surface.destroy", %{"handle" => hd(handles)})
+
+    assert {:ok, %{handle: replacement}} =
+             request(session, "surface.create", %{"w" => 50, "h" => 50})
+
+    refute replacement in tl(handles)
+    assert {:error, _} = request(session, "surface.destroy", %{"handle" => 1})
+    GenServer.cast(Desktop, {:closed, session})
+  end
 end

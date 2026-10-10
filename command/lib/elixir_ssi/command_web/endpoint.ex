@@ -12,7 +12,7 @@ defmodule ElixirSSI.CommandWeb.Endpoint do
   socket "/live", Phoenix.LiveView.Socket, websocket: [connect_info: [session: @session]]
   plug Plug.Static, at: "/assets/phoenix", from: {:phoenix, "priv/static"}
   plug Plug.Static, at: "/assets/live", from: {:phoenix_live_view, "priv/static"}
-  plug Plug.Static, at: "/", from: :ssi_command, only: ~w(app.css app.js)
+  plug Plug.Static, at: "/", from: :ssi_command, only: ~w(app.css app.js favicon.svg)
   plug Plug.RequestId
   plug Plug.Parsers, parsers: [:urlencoded], pass: [], length: 1_048_576
   plug Plug.MethodOverride

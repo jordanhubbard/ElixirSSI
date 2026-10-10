@@ -50,7 +50,7 @@ defmodule SSI.Desktop do
   end
 
   @doc "Status of the running desktop, wherever it is."
-  def status, do: SSI.Service.call(:desktop, :status)
+  def status, do: SSI.Service.call(:desktop, :status, 15_000)
 
   @doc "Ask the RemoteOS host to save a PNG of the desktop at `host_path`."
   def capture(host_path), do: SSI.Service.call(:desktop, {:capture, host_path}, 15_000)
@@ -73,10 +73,13 @@ defmodule SSI.Desktop do
   def click(x, y, button \\ 1), do: inject([%{kind: 4, x: x, y: y, button: button}, %{kind: 5, x: x, y: y, button: button}])
 
   @doc "State of an open application (debugging and tests)."
-  def app_state(app), do: SSI.Service.call(:desktop, {:app_state, app})
+  def app_state(app), do: SSI.Service.call(:desktop, {:app_state, app}, 15_000)
 
   @doc "Open an application window (by module or short name)."
-  def open(app), do: SSI.Service.call(:desktop, {:open, app})
+  def open(app), do: SSI.Service.call(:desktop, {:open, app}, 15_000)
+
+  @doc "Open or restart an installed user desktop application."
+  def launch(app), do: SSI.Service.call(:desktop, {:launch, app}, 15_000)
 
   def start_link(args), do: GenServer.start_link(__MODULE__, args)
 
@@ -102,6 +105,7 @@ defmodule SSI.Desktop do
       dirty: true,
       last_draw: 0,
       tiles: [],
+      upload_queue: %{},
       frames: 0,
       connected_at: nil,
       error: nil,
@@ -111,7 +115,9 @@ defmodule SSI.Desktop do
 
     state =
       case saved[:windows] do
-        [_ | _] = wins -> Enum.reduce(wins, state, fn {app, x, y, saved}, st -> open_window(st, app, {x, y}, saved) end)
+        [_ | _] = wins -> Enum.reduce(wins, state, fn {app, x, y, saved}, st ->
+          if app in @apps or user_app(app), do: open_window(st, app, {x, y}, saved), else: st
+        end)
         _ -> default_windows(state)
       end
 
@@ -147,8 +153,21 @@ defmodule SSI.Desktop do
   end
 
   def handle_call({:open, app}, _from, state) do
-    mod = Enum.find(@apps, &(&1 == app or &1.short() == to_string(app)))
+    mod = Enum.find(@apps, &(&1 == app or &1.short() == to_string(app))) || user_app(app)
     if mod, do: {:reply, :ok, open_window(state, mod, nil)}, else: {:reply, {:error, :unknown_app}, state}
+  end
+
+
+  def handle_call({:launch, app}, _from, state) do
+    case user_app(app) do
+      nil -> {:reply, {:error, :unknown_app}, state}
+      mod ->
+        state = case Enum.find(state.windows, &(&1.app == mod)) do
+          nil -> state
+          win -> close_window(state, win.id)
+        end
+        {:reply, :ok, open_window(state, mod, nil)}
+    end
   end
 
   def handle_call({:inject, events}, _from, %{conn: %Remote{} = conn} = state) do
@@ -255,16 +274,38 @@ defmodule SSI.Desktop do
   defp connect(state) do
     with {:ok, conn} <- Remote.connect(state.endpoint, "elixirssi-desktop", state.token),
          {:ok, display, conn} <- Remote.call(conn, "display.open", %{w: state.w, h: state.h, title: "ElixirSSI cluster desktop"}),
-         {:ok, tiles, conn} <- create_tiles(conn, SSI.Desktop.MandelbrotApp.tile_count(), SSI.Desktop.MandelbrotApp.tile_size()) do
-      # A fresh connection has fresh surfaces: apps must upload everything again.
-      windows =
-        Enum.map(state.windows, fn win ->
-          if function_exported?(win.app, :reset_surfaces, 1), do: %{win | state: win.app.reset_surfaces(win.state)}, else: win
-        end)
-
+         {:ok, windows, conn} <- window_surfaces(state.windows, conn) do
       w = display["w"] || state.w
       h = display["h"] || state.h
-      {:ok, %{state | conn: conn, fb: display["fb_handle"], w: w, h: h, tiles: tiles, windows: windows, dirty: true, connected_at: System.monotonic_time(:millisecond), error: nil}}
+      {:ok, %{state | conn: conn, fb: display["fb_handle"], w: w, h: h, windows: windows, upload_queue: %{}, dirty: true, connected_at: System.monotonic_time(:millisecond), error: nil}}
+    end
+  end
+
+  defp window_surfaces(windows, conn) do
+    Enum.reduce_while(windows, {:ok, [], conn}, fn win, {:ok, acc, connection} ->
+      case app_surfaces(connection, win.app) do
+        {:ok, tiles, connection} ->
+          win = Map.put(win, :tiles, tiles)
+          win = if function_exported?(win.app, :reset_surfaces, 1), do: %{win | state: win.app.reset_surfaces(win.state)}, else: win
+          {:cont, {:ok, [win | acc], connection}}
+        error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, windows, connection} -> {:ok, Enum.reverse(windows), connection}
+      error -> error
+    end
+  end
+
+  defp app_surfaces(nil, _), do: {:ok, [], nil}
+  defp app_surfaces(conn, app) do
+    if function_exported?(app, :tile_count, 0) and function_exported?(app, :tile_size, 0) do
+      count = app.tile_count()
+      size = app.tile_size()
+      if is_integer(count) and count in 1..256 and is_integer(size) and size in 1..256,
+        do: create_tiles(conn, count, size), else: {:error, :invalid_surface_request}
+    else
+      {:ok, [], conn}
     end
   end
 
@@ -297,7 +338,7 @@ defmodule SSI.Desktop do
       with {:ok, state} <- uploads(state),
            {:ok, conn} <- Remote.batch(state.conn, compose(state)),
            {:ok, %{"events" => events}, conn} <- Remote.call(conn, "frame.commit") do
-        state = %{state | conn: conn, dirty: false, last_draw: now, frames: state.frames + 1}
+        state = %{state | conn: conn, dirty: map_size(state.upload_queue) > 0, last_draw: now, frames: state.frames + 1}
         {:ok, events |> Enum.reduce(state, &input/2) |> then(&if(events != [], do: checkpoint_soon(&1), else: &1))}
       else
         {:error, reason, conn} -> {:error, reason, %{state | conn: conn}}
@@ -314,16 +355,19 @@ defmodule SSI.Desktop do
     end
   end
 
-  # Pixel uploads carry binary trailers and cannot be batched. Each app
-  # reports what it needs sent and is told, in the same frame, that it was.
+  # Retain pending pixels across frames, coalescing updates for the same surface.
+  # A bounded batch keeps input and control calls responsive during large renders.
   defp uploads(state) do
     pending =
       for win <- state.windows, function_exported?(win.app, :uploads, 2),
           item <- win.app.uploads(win.state, ctx(state, win)),
           do: item
 
+    queued = Map.merge(state.upload_queue, Map.new(pending))
+    batch = Enum.take(queued, 8)
+
     result =
-      Enum.reduce_while(pending, {:ok, state.conn}, fn {handle, pixels}, {:ok, c} ->
+      Enum.reduce_while(batch, {:ok, state.conn}, fn {handle, pixels}, {:ok, c} ->
         case Remote.call(c, "surface.upload", %{handle: handle}, pixels) do
           {:ok, _, c} -> {:cont, {:ok, c}}
           {:error, e, c} -> {:halt, {:error, e, c}}
@@ -337,7 +381,7 @@ defmodule SSI.Desktop do
             if function_exported?(win.app, :uploaded, 1), do: %{win | state: win.app.uploaded(win.state)}, else: win
           end)
 
-        {:ok, %{state | conn: conn, windows: windows}}
+        {:ok, %{state | conn: conn, windows: windows, upload_queue: Map.drop(queued, Enum.map(batch, &elem(&1, 0)))}}
 
       error ->
         error
@@ -430,6 +474,18 @@ defmodule SSI.Desktop do
     ]
   end
 
+  defp user_app(app) when is_atom(app) do
+    with {:module, ^app} <- Code.ensure_loaded(app),
+         owner when is_atom(owner) <- Application.get_application(app),
+         true <- is_binary(SSI.Deploy.installed()[Atom.to_string(owner)]),
+         true <- Enum.all?([short: 0, title: 0, size: 0, init: 1, render: 3, message: 3], fn {name, arity} -> function_exported?(app, name, arity) end) do
+      app
+    else
+      _ -> nil
+    end
+  end
+  defp user_app(_), do: nil
+
   # -- windows ----------------------------------------------------------------
 
   defp open_window(state, app, pos, saved \\ nil) do
@@ -439,7 +495,11 @@ defmodule SSI.Desktop do
         {w, h} = app.size()
         id = state.next_id
         {x, y} = pos || {80 + rem(id * 37, 300), @menu_h + 30 + rem(id * 29, 200)}
-        win = %{id: id, app: app, x: x, y: y, w: w, h: h + @title_h, state: nil}
+        win = %{id: id, app: app, x: x, y: y, w: w, h: h + @title_h, state: nil, tiles: []}
+        {win, state} = case app_surfaces(state.conn, app) do
+          {:ok, tiles, conn} -> {%{win | tiles: tiles}, %{state | conn: conn}}
+          {:error, why} -> {win, disconnect(state, why)}
+        end
         ctx = ctx(state, win)
 
         app_state =
@@ -456,7 +516,18 @@ defmodule SSI.Desktop do
   defp close_window(state, id) do
     win = Enum.find(state.windows, &(&1.id == id))
     if win && function_exported?(win.app, :close, 1), do: win.app.close(win.state)
-    %{state | windows: Enum.reject(state.windows, &(&1.id == id)), dirty: true}
+    state = if win && state.conn do
+      conn = Enum.reduce(Map.get(win, :tiles, []), state.conn, fn handle, conn ->
+        case Remote.call(conn, "surface.destroy", %{handle: handle}) do
+          {:ok, _, conn} -> conn
+          {:error, _, conn} -> conn
+        end
+      end)
+      %{state | conn: conn}
+    else
+      state
+    end
+    %{state | windows: Enum.reject(state.windows, &(&1.id == id)), upload_queue: Map.drop(state.upload_queue, if(win, do: Map.get(win, :tiles, []), else: [])), dirty: true}
   end
 
   defp raise_window(state, id) do
@@ -483,7 +554,7 @@ defmodule SSI.Desktop do
 
   @doc false
   def ctx(state, win) do
-    %{desktop: self(), id: win.id, tiles: state.tiles, fb: state.fb}
+    %{desktop: self(), id: win.id, tiles: Map.get(win, :tiles, []), fb: state.fb}
   end
 
   # -- input ------------------------------------------------------------------

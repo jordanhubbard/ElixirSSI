@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Fold desktop demos into Projects and simplify Files into local/remote panes with
+  directional transfers and contextual tools.
+
+- Link desktop demos to their exact running source. Copy a demo into an editable
+  Mix project, test it, and deploy and launch it across the connected cluster.
+- Add browser file editing, binary uploads/downloads, project ZIP import/export,
+  and reviewed copies between command projects, cluster files and node-local files.
+- Link selected host folders with read-only or read-write access. Preview explicit
+  bidirectional synchronization, resolve conflicts, reject stale plans, and retain
+  synchronization baselines across command-node restarts.
+- Give desktop windows independent pixel surfaces so copied graphical demos can
+  run alongside their built-in originals. Keep the desktop responsive during tile
+  uploads and preserve unrelated applications when deploying or updating a demo.
+
 ## 1.1.0 - 2026-10-09
 
 [README.md](https://github.com/jordanhubbard/ElixirSSI/blob/v1.1.0/README.md)

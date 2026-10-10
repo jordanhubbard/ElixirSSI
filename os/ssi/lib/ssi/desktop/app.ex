@@ -18,14 +18,19 @@ defmodule SSI.Desktop.App do
   @callback tick(state :: term, ctx :: map) :: term | {:dirty, term}
   @callback event(map, state :: term, ctx :: map) :: term
   @callback uploads(state :: term, ctx :: map) :: [{integer, binary}]
+  @doc "The desktop has accepted pending pixels into its upload queue."
   @callback uploaded(state :: term) :: term
+  @doc "Mark pixels for resend after reconnecting to new, empty surfaces."
   @callback reset_surfaces(state :: term) :: term
   @callback close(state :: term) :: any
+  @doc "Optional per-window square pixel surfaces; each window receives its own handles in ctx.tiles."
+  @callback tile_count() :: pos_integer
+  @callback tile_size() :: pos_integer
   @doc "Small term saved with the desktop checkpoint; survives failover."
   @callback checkpoint(state :: term) :: term
   @doc "Re-create state from `checkpoint/1` output on another node."
   @callback restore(saved :: term, ctx :: map) :: term
-  @optional_callbacks tick: 2, event: 3, uploads: 2, uploaded: 1, reset_surfaces: 1, close: 1, checkpoint: 1, restore: 2
+  @optional_callbacks tick: 2, event: 3, uploads: 2, uploaded: 1, reset_surfaces: 1, close: 1, checkpoint: 1, restore: 2, tile_count: 0, tile_size: 0
 
   @palette [0x61AFEF, 0xE5C07B, 0x98C379, 0xE06C75, 0xC678DD, 0x56B6C2, 0xD19A66, 0xF0A0C0, 0xA0E0A0, 0xB0B0FF]
 

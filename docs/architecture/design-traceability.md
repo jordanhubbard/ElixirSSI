@@ -1,6 +1,6 @@
 # Design traceability
 
-<!-- literate-ai:authority-reviewed sha256:ea097386df8e8539a2a5674978e68737ed2385d5b925180a684793798a20f527 -->
+<!-- literate-ai:authority-reviewed sha256:dcfded31bed02db5de3c7e373ff59699d37d08f28c786ca038036b36569ad52a -->
 
 [Project guide](../README.md) → design traceability
 
@@ -21,6 +21,15 @@ authenticated Phoenix workspace, installation policy and development operations
 (`command/`). Their transport and execution boundaries are described in the
 [command-node architecture](command-node.md). The command node remains available
 when the guest cluster is stopped; it does not replace the guest's BEAM runtime.
+
+SSI-018 extends that boundary to file transfer, explicit host-folder links,
+conflict-aware synchronization and provenance-bound desktop examples. Guest source
+snapshots and filesystem operations belong to the OS; browsing, editing, transfer
+review and synchronization baselines belong to the command component. Pixel
+surfaces belong to individual guest windows, so editable demo copies can coexist.
+SSI-019 simplifies this workspace: Demos is a built-in project, and Files presents
+two independent panes with directional transfers and contextual tools. Existing
+provenance, bounded transfers and conflict checks remain command/guest contracts.
 
 `make test` checks both applications and build boundaries. `make verify-update`
 qualifies the image and CM5 emulation and binds the retained sources to its

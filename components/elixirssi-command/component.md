@@ -62,11 +62,52 @@ in the isolated project environment. Transfers MUST be bounded and checked for
 completeness and content identity before activation. Prepare dependency code
 paths before starting applications; failed activation MUST attempt restoration
 of the previously installed application set and report any restoration failure.
+Only changed applications and their installed dependents are restarted; unrelated
+applications and desktop windows MUST remain running. Replacement code MUST be
+loaded without an intervening interval in which hosted desktop callbacks are absent.
 
 Guest SSH exec requests MUST evaluate Elixir under the same authenticated
 operator authority as the interactive SSH shell. Bound command size and evaluation
 time; return syntax/runtime errors as failed operations. This is privileged system
 evaluation, not an untrusted-code sandbox. Local project evaluation remains isolated.
+
+## Source and files workspace
+
+The desktop view MUST identify each built-in demo's exact running source version,
+open that source, and copy it into an editable project with build, deploy and run
+actions. Packaged source provenance MUST correspond to the guest build, not the
+command node's checkout or latest upstream branch. Demos MUST appear as a built-in
+project within Projects, sharing the workspace navigation rather than a separate
+source page. Desktop source links MUST open that project and the chosen demo.
+
+The authenticated browser MUST support file and folder creation, source editing,
+rename, deletion, binary upload/download, and project import/export. A unified
+Files view MUST distinguish command workspace, shared cluster files and node-local
+files and support explicit copies between them. Files MUST present two independently
+navigable panes, defaulting to local command files and remote cluster files, with
+directional copy controls using the selected file and opposite folder. Both panes
+MUST retain their locations and refresh after transfers. Editing, uploads, folder
+links and optional synchronization MUST be contextual tools rather than separate
+primary objects or permanently expanded forms. Browser saves MUST persist on the
+command node. Remote operations MUST use verified node identities and report
+offline, permission and transfer failures without claiming completion.
+
+Operators MUST be able to link selected host directories into the workspace.
+The installed Docker configuration MUST expose only selected additional folders;
+paths are host paths, not browser-machine paths. File operations MUST remain within
+the selected root, reject symlink traversal, bound transfers and archive expansion,
+and require explicit confirmation before destructive operations or overwrites.
+
+Linked folders MUST support explicit synchronization with a selected cluster
+directory. Preview MUST show additions, changes, deletions and conflicts with
+direction and destination. Applying a plan MUST reject changed inputs, require
+explicit conflict resolution and preserve unrelated files. Synchronization metadata
+MUST survive command-node restarts; no background synchronization is implied.
+
+Qualification MUST exercise these flows in a real browser against the packaged
+application and emulated cluster, including edited demo deployment and launch,
+binary round trips, persisted host-folder links, conflict resolution, stale-plan
+rejection and node-offline errors.
 
 ## Distribution and qualification
 
