@@ -2,9 +2,15 @@
 
 ## Unreleased
 
+## 1.2.0 - 2026-10-10
+
+[README.md](https://github.com/jordanhubbard/ElixirSSI/blob/v1.2.0/README.md)
+
+- Qualification: macOS ARM Docker Desktop, three emulated CM5 nodes and the
+  packaged browser workspace. Physical Pi and Windows runtime qualification
+  are not claimed by this release.
 - Fold desktop demos into Projects and simplify Files into local/remote panes with
   directional transfers and contextual tools.
-
 - Link desktop demos to their exact running source. Copy a demo into an editable
   Mix project, test it, and deploy and launch it across the connected cluster.
 - Add browser file editing, binary uploads/downloads, project ZIP import/export,

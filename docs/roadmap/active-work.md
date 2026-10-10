@@ -344,7 +344,7 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
 - **Validation:** All existing verification stages passed: 49 command tests, 67 guest tests, 27 image checks, 10 RP1 checks and 29 three-board CM5 checks. All 17 packaged browser acceptance checks passed, including both transfer directions, conflicts, stale plans, unlinking, all four demo projects, running-demo redeployment, restart persistence, mobile layout, offline errors and a clean console. The updated localhost:4000 installation passed its own desktop/mobile browser check. All 11 existing project files and the cluster identity were preserved; the previous dependency/resource deployment works and all three nodes are healthy. Installed Docker image references are retained across packaging.
 - **Boundary:** Qualified on macOS ARM Docker Desktop. Directional arrows copy a selected file; optional synchronization compares folder trees. No new release was published.
 
-### [ ] SSI-020 — Publish the integrated workspace as ElixirSSI 1.2.0
+### [x] SSI-020 — Publish the integrated workspace as ElixirSSI 1.2.0
 
 - **Priority:** P1
 - **Owner:** ElixirSSI release and distribution
@@ -352,7 +352,9 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
 - **Conclusion:** Land SSI-018 and SSI-019 and publish 1.2.0 using the existing authorized project and packaged-install gates. Hosted CI is unconfigured; Jira integration is not enabled. Preserve and restore the installed cluster.
 - **Depends on:** none
 - **Implementation:**
-  - [ ] Land completed workspace changes on main and prepare release 1.2.0
-  - [ ] Publish all required assets and advance main development version
+  - [x] Land completed workspace changes on main and prepare release 1.2.0
+  - [x] Publish all required assets and advance main development version
 - **Evidence:**
-  - [ ] Pass exact-revision project and packaged browser gates and verify published assets
+  - [x] Pass exact-revision project and packaged browser gates and verify published assets
+
+- **Outcome:** [ElixirSSI 1.2.0](https://github.com/jordanhubbard/ElixirSSI/releases/tag/v1.2.0) is published at `9c76daeb0a54ed763029f42b577aecb5b0556934`. PR #5 landed the workspace changes on main. All project gates and all 17 packaged browser checks passed on macOS ARM Docker Desktop with three emulated nodes. All 12 published assets passed full download, size and SHA-256 verification. The publisher hit its fixed 120-second upload timeout; the unchanged qualified assets were completed with gh without moving the tag. The installed three-node cluster was restored. Main advances to 1.3.0 for development.
