@@ -85,24 +85,27 @@ defmodule SSI.Deploy do
     with true <- is_map(applications) and map_size(applications) in 1..128,
          {:ok, prepared} <- validate_all(applications, state) do
       next = Enum.reduce(prepared, state.apps, fn item, acc -> Map.put(acc, item.name, item.digest) end)
+      affected = affected_apps(state.apps, next)
+      previous = Map.take(state.apps, affected)
+      replacement = Map.take(next, affected)
       try do
         for item <- prepared, {file, bytes} <- item.files do
           path = Path.join([state.root, item.name, item.digest, item.name, file])
           File.mkdir_p!(Path.dirname(path))
           unless File.read(path) == {:ok, bytes}, do: durable_write!(path, bytes)
         end
-        deactivate_all(state.root, state.apps)
-        case activate_all(state.root, next) do
+        deactivate_all(state.root, previous)
+        case activate_all(state.root, replacement) do
           :ok ->
             file = Path.join(state.root, "installed.json")
             durable_write!(file <> ".tmp", JSON.encode!(next))
             File.rename!(file <> ".tmp", file)
             SSI.Sys.sync()
             {:ok, %{applications: Map.take(next, Map.keys(applications)), node: node()}, next}
-          {:error, why} -> rollback(state, next, why)
+          {:error, why} -> rollback(state.root, previous, replacement, why)
         end
       rescue
-        error -> rollback(state, next, Exception.message(error))
+        error -> rollback(state.root, previous, replacement, Exception.message(error))
       end
     else
       {:error, why} -> {:error, why}
@@ -110,10 +113,24 @@ defmodule SSI.Deploy do
     end
   end
 
-  defp rollback(state, next, why) do
-    deactivate_all(state.root, next)
-    result = activate_all(state.root, state.apps)
+  defp rollback(root, previous, replacement, why) do
+    deactivate_all(root, replacement)
+    result = activate_all(root, previous)
     {:error, "Activation failed: #{inspect(why)}; previous application restore: #{inspect(result)}"}
+  end
+
+  defp affected_apps(previous, next) do
+    changed = for {name, digest} <- next, previous[name] != digest, do: name
+    expand_dependents(previous, MapSet.new(changed)) |> MapSet.to_list()
+  end
+
+  defp expand_dependents(apps, changed) do
+    expanded = Enum.reduce(apps, changed, fn {name, _}, acc ->
+      app = String.to_atom(name)
+      deps = (Application.spec(app, :applications) || []) ++ (Application.spec(app, :included_applications) || [])
+      if Enum.any?(deps, &MapSet.member?(changed, Atom.to_string(&1))), do: MapSet.put(acc, name), else: acc
+    end)
+    if expanded == changed, do: changed, else: expand_dependents(apps, expanded)
   end
 
   defp validate_all(applications, state) do
@@ -235,12 +252,9 @@ defmodule SSI.Deploy do
     for name <- order, do: Application.stop(String.to_atom(name))
     for name <- order do
       app = String.to_atom(name)
-      modules = Application.spec(app, :modules) || []
       Application.unload(app)
-      for module <- modules do
-        :code.purge(module)
-        :code.delete(module)
-      end
+      # Desktop callbacks run in a service outside the application's supervision
+      # tree. Keep current code callable until load_abs atomically replaces it.
       Code.delete_path(code_path(root, name, apps[name]))
     end
   end

@@ -4,19 +4,19 @@ defmodule SSI.RemoteTest do
 
   # A minimal RemoteOS-v2 service: answers every request, records envelopes
   # and trailers, and returns one queued mouse event on the first commit.
-  defp fake_service(test_pid) do
+  defp fake_service(test_pid, batch_ops \\ 2) do
     {:ok, listen} = :gen_tcp.listen(0, [:binary, active: false, packet: :raw, reuseaddr: true])
     {:ok, port} = :inet.port(listen)
 
     spawn_link(fn ->
       {:ok, sock} = :gen_tcp.accept(listen)
-      serve(sock, test_pid, 1)
+      serve(sock, test_pid, 1, batch_ops)
     end)
 
     "127.0.0.1:#{port}"
   end
 
-  defp serve(sock, test_pid, handle) do
+  defp serve(sock, test_pid, handle, batch_ops) do
     with {:ok, <<len::32>>} <- :gen_tcp.recv(sock, 4),
          {:ok, json} <- :gen_tcp.recv(sock, len) do
       req = JSON.decode!(json)
@@ -25,7 +25,7 @@ defmodule SSI.RemoteTest do
 
       result =
         case req["op"] do
-          "hello" -> %{service: "fake", features: ["render.batch"], limits: %{batch_ops: 2}}
+          "hello" -> %{service: "fake", features: ["render.batch"], limits: %{batch_ops: batch_ops}}
           "display.open" -> %{fb_handle: 1, w: req["params"]["w"], h: req["params"]["h"]}
           "surface.create" -> %{handle: handle + 1}
           "frame.commit" -> %{events: [%{kind: 4, x: 5, y: 6, button: 1}]}
@@ -39,7 +39,7 @@ defmodule SSI.RemoteTest do
         :gen_tcp.send(sock, <<byte_size(out)::32, out::binary>>)
       end
 
-      serve(sock, test_pid, handle + 1)
+      serve(sock, test_pid, handle + 1, batch_ops)
     end
   end
 
@@ -78,4 +78,52 @@ defmodule SSI.RemoteTest do
     assert SSI.Desktop.ShellApp in status.windows
     GenServer.stop(pid)
   end
+
+  test "a complete tile burst is delivered across bounded frames" do
+    endpoint = fake_service(self(), 512)
+    {:ok, pid} = SSI.Desktop.start_link(%{endpoint: endpoint, size: "800x600"})
+    assert_receive {:req, %{"op" => "frame.commit"}, nil}, 5_000
+    :sys.suspend(pid)
+    state = :sys.get_state(pid)
+    win = Enum.find(state.windows, &(&1.app == SSI.Desktop.MandelbrotApp))
+    gen = win.state.gen + 1
+    :sys.replace_state(pid, fn state ->
+      windows = Enum.map(state.windows, fn w ->
+        if w.id == win.id, do: %{w | state: %{w.state | gen: gen, tiles: %{}, pending: []}}, else: w
+      end)
+      %{state | windows: windows, upload_queue: %{}, dirty: true}
+    end)
+    pixels = :binary.copy(<<19, 71, 113, 255>>, 2500)
+    for i <- 0..95, do: send(pid, {:app, win.id, {:tile, gen, i, node(), pixels}})
+    drain_requests()
+    :sys.resume(pid)
+    collect_tiles(96, 0, pixels)
+    assert GenServer.call(pid, :status).connected
+    GenServer.stop(pid)
+  end
+
+  defp drain_requests do
+    receive do
+      {:req, _, _} -> drain_requests()
+    after
+      0 -> :ok
+    end
+  end
+
+  defp collect_tiles(remaining, in_frame, pixels) do
+    receive do
+      {:req, %{"op" => "surface.upload"}, ^pixels} ->
+        collect_tiles(remaining - 1, in_frame + 1, pixels)
+      {:req, %{"op" => "surface.upload"}, _} ->
+        collect_tiles(remaining, in_frame + 1, pixels)
+      {:req, %{"op" => "frame.commit"}, nil} ->
+        assert in_frame <= 8
+        if remaining > 0, do: collect_tiles(remaining, 0, pixels)
+      {:req, _, _} ->
+        collect_tiles(remaining, in_frame, pixels)
+    after
+      15_000 -> flunk("queued tiles did not reach the renderer")
+    end
+  end
+
 end

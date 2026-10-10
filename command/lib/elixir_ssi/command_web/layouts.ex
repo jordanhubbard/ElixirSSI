@@ -10,6 +10,7 @@ defmodule ElixirSSI.CommandWeb.Layouts do
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="csrf-token" content={Plug.CSRFProtection.get_csrf_token()} />
         <title>ElixirSSI · Command</title>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="stylesheet" href="/app.css" />
         <script defer src="/assets/phoenix/phoenix.js">
         </script>

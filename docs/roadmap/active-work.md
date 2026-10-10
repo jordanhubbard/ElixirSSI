@@ -304,3 +304,55 @@ release-visible outcome to `CHANGELOG.md`; Git preserves prior queue states.
   - [x] Verify exact prepared revision, packaged three-node browser acceptance and uploaded release assets
 
 - **Outcome:** [ElixirSSI 1.1.0](https://github.com/jordanhubbard/ElixirSSI/releases/tag/v1.1.0) is published at `766727ba9636aea25cf5ab33ae6dbfb2c1b43c6a`. All 12 assets passed full download, size and SHA-256 verification through `litai release verify-published`. The existing three-node installation was restored. The publisher’s fixed 120-second upload timeout required completing the unchanged qualified assets with `gh`; the tag was not moved. Main advances to 1.2.0 for development.
+
+### [x] SSI-018 — Connect desktop sources and browser files across command and cluster nodes
+
+- **Priority:** P1
+- **Owner:** ElixirSSI command and desktop Components
+- **Direction:** Provide demo source navigation and editable copies, browser uploads/downloads and project import/export, a unified command/cluster/node file browser, and linked host folders with explicit conflict-aware synchronization.
+- **Conclusion:** Extend the existing Phoenix workspace and SSI.FS with authenticated bounded file operations, versioned demo source provenance, and reviewed synchronization plans. Preserve existing projects and cards. No release is requested.
+- **Depends on:** none
+- **Delivered:** Exact guest demo source navigation and editable Mix projects; browser files, binary transfers and ZIP projects; command/cluster/node locations; selected host-folder links with explicit conflict-aware synchronization. Demo deployment preserves unrelated applications and supports editing/redeploying a running demo without restarting the desktop.
+- **Validation:** `make verify-update` passed all existing gates: 46 command tests, 67 guest tests, 27 image checks, 10 RP1 checks and 29 three-board CM5 checks. Fresh packaged browser acceptance passed every workflow, all four copied demos, running-demo redeployment, command/cluster restart persistence, mobile layout, offline errors and a clean browser console. The updated installation at `http://localhost:4000` passed its own browser check; all 11 existing project files and the cluster identity are unchanged, the previous dependency/resource deployment still works, and all three nodes are healthy.
+- **Boundary:** Qualified on macOS ARM Docker Desktop. Folder links provide explicit synchronization, not a live mounted cluster filesystem. Physical Pi and Windows runtime qualification are not claimed. No new release was published.
+- **Implementation:**
+  - [x] Expose exact running demo sources and copyable runnable projects with build/deploy/run actions
+  - [x] Implement browser file and folder creation, editing, rename, deletion, upload/download and project import/export
+  - [x] Browse and copy between command workspace, cluster files and node-local files
+  - [x] Register selected host folders and preview/apply synchronization with explicit conflict handling
+- **Evidence:**
+  - [x] Boundary and regression tests for traversal, symlinks, bounded transfers, archive import, conflicts and stale synchronization plans
+  - [x] Real browser acceptance of every workflow against packaged command node and three emulated nodes, including persistence and offline errors
+  - [x] Full existing build and verification gates pass; preserve installation data and restore running cluster
+
+### [x] SSI-019 — Simplify projects and provide a dual-pane file browser
+
+- **Priority:** P1
+- **Owner:** ElixirSSI command Component
+- **Direction:** Fold Demo sources into Projects as Demos and make Files a local/remote browser with directional transfers.
+- **Conclusion:** Reuse verified demo provenance and file operations while simplifying navigation and contextual controls; preserve installed projects and cluster state.
+- **Depends on:** none
+- **Implementation:**
+  - [x] Integrate Demos into Projects and replace the standalone source navigation
+  - [x] Implement independent local and remote panes with selection and directional copy controls
+  - [x] Keep editing, uploads, folder links and synchronization available as contextual tools
+- **Evidence:**
+  - [x] Regression and browser coverage for project navigation, independent panes and both transfer directions
+  - [x] Run existing verification and packaged browser gates and update the local installation safely
+
+- **Delivered:** Demos is a built-in project in Projects; desktop source links open it and legacy URLs redirect there. Files has independent local/remote panes, selection, directional copies, retained locations, refreshed listings and contextual editing, uploads, archives, linking and synchronization. Navigation is consistent across both views; narrow screens stack the panes with up/down transfer controls.
+- **Validation:** All existing verification stages passed: 49 command tests, 67 guest tests, 27 image checks, 10 RP1 checks and 29 three-board CM5 checks. All 17 packaged browser acceptance checks passed, including both transfer directions, conflicts, stale plans, unlinking, all four demo projects, running-demo redeployment, restart persistence, mobile layout, offline errors and a clean console. The updated localhost:4000 installation passed its own desktop/mobile browser check. All 11 existing project files and the cluster identity were preserved; the previous dependency/resource deployment works and all three nodes are healthy. Installed Docker image references are retained across packaging.
+- **Boundary:** Qualified on macOS ARM Docker Desktop. Directional arrows copy a selected file; optional synchronization compares folder trees. No new release was published.
+
+### [ ] SSI-020 — Publish the integrated workspace as ElixirSSI 1.2.0
+
+- **Priority:** P1
+- **Owner:** ElixirSSI release and distribution
+- **Direction:** Commit and push the completed workspace changes, then release.
+- **Conclusion:** Land SSI-018 and SSI-019 and publish 1.2.0 using the existing authorized project and packaged-install gates. Hosted CI is unconfigured; Jira integration is not enabled. Preserve and restore the installed cluster.
+- **Depends on:** none
+- **Implementation:**
+  - [ ] Land completed workspace changes on main and prepare release 1.2.0
+  - [ ] Publish all required assets and advance main development version
+- **Evidence:**
+  - [ ] Pass exact-revision project and packaged browser gates and verify published assets

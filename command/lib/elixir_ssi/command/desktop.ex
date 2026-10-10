@@ -44,7 +44,14 @@ defmodule ElixirSSI.Command.Desktop do
     bind = Application.get_env(:ssi_command, :desktop_bind, {127, 0, 0, 1})
 
     {:ok, listener} =
-      :gen_tcp.listen(port, [:binary, active: false, packet: :raw, reuseaddr: true, ip: bind])
+      :gen_tcp.listen(port, [
+        :binary,
+        active: false,
+        packet: :raw,
+        reuseaddr: true,
+        nodelay: true,
+        ip: bind
+      ])
 
     {:ok, _} = Task.Supervisor.start_child(ElixirSSI.Command.Tasks, fn -> accept(listener) end)
 
@@ -119,14 +126,19 @@ defmodule ElixirSSI.Command.Desktop do
   end
 
   defp request("surface.create", %{"w" => w, "h" => h}, _, s) when w in 1..256 and h in 1..256 do
-    true = map_size(s.surfaces) < 128
+    true = map_size(s.surfaces) < 512
 
     true =
       w * h + Enum.sum(for {id, surface} <- s.surfaces, id != 1, do: surface.w * surface.h) <=
-        524_288
+        2_097_152
 
-    handle = map_size(s.surfaces) + 1
+    handle = Enum.max(Map.keys(s.surfaces), fn -> 1 end) + 1
     {%{handle: handle}, %{s | surfaces: Map.put(s.surfaces, handle, %{w: w, h: h})}}
+  end
+
+  defp request("surface.destroy", %{"handle" => handle}, _, s) do
+    true = handle != 1 and Map.has_key?(s.surfaces, handle)
+    {%{}, %{s | surfaces: Map.delete(s.surfaces, handle)}}
   end
 
   defp request("surface.upload", %{"handle" => handle}, payload, s) do

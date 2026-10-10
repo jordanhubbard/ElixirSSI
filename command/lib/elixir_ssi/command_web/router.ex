@@ -22,9 +22,13 @@ defmodule ElixirSSI.CommandWeb.Router do
     post "/login", SessionController, :create
     post "/session/ticket", SessionController, :ticket
     delete "/session", SessionController, :delete
+    get "/demos", FileController, :demos
+    get "/files/download", FileController, :download
+    get "/files/export", FileController, :export
 
     live_session :authenticated, on_mount: [{ElixirSSI.CommandWeb.Session, :require}] do
       live "/", WorkspaceLive
+      live "/files", FilesLive
     end
   end
 end

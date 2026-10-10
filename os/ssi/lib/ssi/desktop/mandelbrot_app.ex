@@ -19,7 +19,9 @@ defmodule SSI.Desktop.MandelbrotApp do
   @w @tile * @cols
   @h @tile * @rows
 
+  @impl true
   def tile_size, do: @tile
+  @impl true
   def tile_count, do: @cols * @rows
 
   @impl true

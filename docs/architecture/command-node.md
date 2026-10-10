@@ -28,6 +28,53 @@ scripts are development infrastructure.
 - Authentication protects the entire workspace, including LiveView reconnects.
   The command node is an execution authority, not a publicly accessible monitor.
 
+## Sources and files
+
+Demos is a built-in, read-only project in Projects. Desktop source links open the
+chosen demo there; copying creates an ordinary editable project in the same list.
+There is no separate source page. The guest-supplied snapshots include source
+hashes, compiled module identities and guest version. Requests follow the desktop
+service to its current owner. Copying a snapshot creates a namespaced Mix project
+and preserves the originals under `priv/original`. The project can be edited,
+compiled and tested in the workspace. Its explicit desktop deployment installs on
+all currently connected members before opening or restarting its window, so
+distributed callbacks are available wherever tasks run. Membership changes during
+deployment are errors; adding a new member requires redeployment. A copied demo
+does not replace the built-in application.
+Deployment restarts changed applications and their installed dependents, retaining
+unrelated applications. Existing module code stays callable until its replacement
+is loaded, so desktop callbacks do not encounter a temporary missing-module gap.
+
+Files uses two independently navigable panes, initially local command projects and
+remote cluster files. Location selectors also expose node-local files and linked
+host folders, and permit any explicit pair of locations. Selecting a file highlights
+it; directional arrows preview copying it into the opposite pane's open folder.
+Both panes refresh after a transfer while retaining their paths. A contextual
+toolbar opens editing, rename, create, upload, project archives, folder linking or
+synchronization. Folder rows open on activation and expose rename/delete in their
+menu. On narrow screens the panes stack and transfer arrows point up/down. Browser saves persist in command-node storage;
+binary uploads/downloads and project ZIP import/export use bounded transfers.
+Copies preview the destination and reject changed source or destination contents.
+Node-local access rejects symlinks and special devices. The guest transfer service
+checks chunk offsets, length and SHA-256 before committing a write.
+
+Host links refer to folders on the command node's Docker host, not the browser's
+machine. They default to read-only. Short-lived Elixir helper containers mount only
+the selected folder and a request/response directory, without network access,
+management credentials or the Docker socket. Link metadata persists across
+command-node restarts; unlinking does not delete files.
+
+Folder synchronization is explicit and bidirectional. A preview compares both
+trees with their last successful common baseline. First sync preserves unrelated
+files; conflicting edits, deletion versus edits, and file/directory replacements
+require a side selection. Resolved changes receive another review before apply.
+Apply rechecks the preview, copies bounded verified content, checks individual
+destination identities and saves a new baseline only when both final trees agree.
+It is not an atomic transaction across machines: a failed operation reports that
+earlier listed changes may have completed, retains the previous baseline and
+requires a new preview. Build output, dependencies, Git metadata and workspace
+tool files are excluded. Operations and baseline records survive reconnection.
+
 ## Boundaries
 
 The local installation binds its published interface to loopback. Phoenix sessions,
